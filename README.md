@@ -26,6 +26,7 @@ GitHub Pages 배포 경로는 `/weird_pathfinder/`로 설정되어 있습니다.
 
 ```text
 src/
+├─ application/  provider와 routing core를 UI용 결과로 조합
 ├─ domain/       핵심 교통 모델과 시간 유틸리티
 ├─ providers/    외부 데이터 소스 adapter interface
 ├─ mock/         작은 버스·지하철망과 mock provider
@@ -47,6 +48,12 @@ src/
 Hard는 전체 보행시간에 일괄 배수를 적용하지 않습니다. `purpose: transfer`인 도보 링크에서만 `fast`, `standard`, `relaxed` 상태를 만들며, 각 상태에서 잡을 수 있는 차량 후보 수는 제한하지 않습니다. 위치·차량 문맥·시각·Pareto 자원벡터가 모두 같은 경우에만 분기 상태를 병합합니다.
 
 Hard 결과는 route pattern별로 묶이며 최단 도착, 표준 보행 도착, 환승·도보·aggressive 부담과 timing variant를 제공합니다. dominance, 안전한 top-K 종료와 현재 성능 위험요소는 [Hard routing 설계](docs/HARD_ROUTING.md)에 정리했습니다.
+
+## 프론트엔드
+
+모바일 우선 React 화면에서 mock 장소 검색, 복수 경유지 편집, 네 가지 탐색 모드, 경로 목록·상세, Hard timing branch와 Active Trip 차량 선택까지 한 흐름으로 확인할 수 있습니다. 데스크톱에서는 경로 패널과 지도 placeholder를 나란히 배치하고, 모바일에서는 지도를 위에 둔 단일 열 구조로 전환합니다.
+
+UI는 routing class나 mock data를 직접 계산하지 않습니다. `CoreTransitPlanner`가 `PlaceProvider`와 `TimeDependentRouter`를 주입받아 화면용 `PlannedRoute`를 만들며, 앱 시작점인 `main.tsx`만 mock 구현을 조립합니다. 실제 연동 시 provider와 지도 adapter를 교체하는 방법은 [Frontend 설계](docs/FRONTEND.md)에 정리했습니다.
 
 ## 경유지
 
@@ -75,7 +82,7 @@ Kakao Maps는 UI의 지도 표시 계층에만 연결하고 라우팅 코어에 
 - 표준 환승 4분: 09:15 차량 탑승, 잠실 09:37 도착
 - 여유 환승 6분: 09:18 차량 탑승, 잠실 09:40 도착
 
-단위 테스트는 이 분기, 연속 환승 차량 변경, 반대 방향 우회, 긴 도보, 다환승, 접근 보행 비가속, 동일 차량 병합, Pareto dominance, route timing variant, 경유지 편집과 시간 변환, mock provider 계약, 최소 UI 상호작용을 검증합니다. `npm run test:diagnostic`으로 작은 mock과 synthetic network의 상태 수와 실행시간도 확인할 수 있습니다.
+단위 테스트는 이 분기, 연속 환승 차량 변경, 반대 방향 우회, 긴 도보, 다환승, 접근 보행 비가속, 동일 차량 병합, Pareto dominance, route timing variant, 경유지 편집과 시간 변환, mock provider 계약을 검증합니다. UI 테스트는 복수 경유지 편집, 시간 동기화, 네 가지 모드, Hard branch 렌더링·선택, Active Trip 차량 선택·countdown, 병합 이후 segment 단일 표시를 검증합니다. `npm run test:diagnostic`으로 작은 mock과 synthetic network의 상태 수와 실행시간도 확인할 수 있습니다.
 
 ## 다음 단계
 

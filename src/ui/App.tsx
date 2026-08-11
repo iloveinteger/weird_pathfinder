@@ -1,57 +1,246 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import type { Journey, PlaceSearchResult, TransferPace } from '../domain/models'
+import { formatClock, parseClock } from '../domain/time'
+import { resolveWaypointTiming } from '../waypoints/plan'
+import type { PlannedRoute, PlannerMode, TransitPlanner } from '../application/transitPlanner'
+import type { TimingVariant } from '../routing/hard/types'
+import { TransitMap } from './TransitMap'
 
-type Mode = 'normal' | 'hard'
+interface EditableWaypoint {
+  id: string
+  place?: PlaceSearchResult
+  query: string
+  arrivalTime: number
+  dwellMinutes: number
+  departureTime: number
+}
 
-export function App() {
-  const [mode, setMode] = useState<Mode>('normal')
-  const [waypoints, setWaypoints] = useState<string[]>(['서울역'])
+interface AppProps { planner: TransitPlanner }
+
+const modes: Array<{ id: PlannerMode; label: string; hint: string }> = [
+  { id: 'transfers', label: '최소 환승', hint: '갈아타는 횟수 우선' },
+  { id: 'walking', label: '최소 도보', hint: '걷는 거리 우선' },
+  { id: 'time', label: '최소 시간', hint: '일반 환승 기준' },
+  { id: 'hard', label: '최소 시간 Hard', hint: '빠른 환승까지 탐색' },
+]
+
+export function App({ planner }: AppProps) {
+  const [origin, setOrigin] = useState<PlaceSearchResult>()
+  const [destination, setDestination] = useState<PlaceSearchResult>()
+  const [waypoints, setWaypoints] = useState<EditableWaypoint[]>([])
+  const [departureClock, setDepartureClock] = useState('09:00')
+  const [mode, setMode] = useState<PlannerMode>('hard')
+  const [routes, setRoutes] = useState<PlannedRoute[]>([])
+  const [selectedRoute, setSelectedRoute] = useState<PlannedRoute>()
+  const [selectedVariant, setSelectedVariant] = useState<TimingVariant>()
+  const [activeTrip, setActiveTrip] = useState(false)
+  const [status, setStatus] = useState('출발지와 목적지를 확인해 주세요')
+
+  useEffect(() => {
+    void planner.searchPlaces('').then((places) => {
+      setOrigin(places.find((place) => place.id === 'gwanghwamun') ?? places[0])
+      setDestination(places.find((place) => place.id === 'jamsil') ?? places.at(-1))
+      setStatus('Mock 시간표 준비 완료')
+    })
+  }, [planner])
+
+  const chooseRoute = (route: PlannedRoute) => {
+    setSelectedRoute(route)
+    setSelectedVariant(route.variants[0])
+    setActiveTrip(false)
+  }
+
+  const search = async () => {
+    if (!origin || !destination || waypoints.some((waypoint) => !waypoint.place)) {
+      setStatus('모든 장소를 검색 결과에서 선택해 주세요')
+      return
+    }
+    setStatus('시간표를 탐색하고 있습니다…')
+    const found = await planner.findRoutes({
+      originId: origin.id,
+      destinationId: destination.id,
+      departureTime: parseClock(departureClock),
+      waypoints: waypoints.map((waypoint) => ({ id: waypoint.id, placeId: waypoint.place!.id, name: waypoint.place!.name, dwellMinutes: waypoint.dwellMinutes })),
+      mode,
+    })
+    setRoutes(found)
+    if (found[0]) {
+      chooseRoute(found[0])
+      setWaypoints((items) => items.map((item, index) => {
+        const arrivalTime = found[0].waypointArrivals[index] ?? item.arrivalTime
+        return { ...item, ...resolveWaypointTiming({ arrivalTime, dwellMinutes: item.dwellMinutes }) }
+      }))
+      setStatus(`${found.length}개 경로를 찾았습니다`)
+    } else {
+      setSelectedRoute(undefined)
+      setSelectedVariant(undefined)
+      setStatus('현재 mock 시간표에서는 가능한 경로가 없습니다')
+    }
+  }
+
+  if (activeTrip && selectedRoute && selectedVariant) {
+    return <ActiveTrip planner={planner} route={selectedRoute} variant={selectedVariant} onVariantChange={setSelectedVariant} onBack={() => setActiveTrip(false)} />
+  }
 
   return (
     <main className="app-shell">
-      <header className="topbar">
-        <a className="brand" href="#">샛길 <span>weird pathfinder</span></a>
-        <span className="status"><i /> MOCK NETWORK</span>
-      </header>
+      <Header />
+      <div className="workspace">
+        <div className="content-column">
+          <section className="planner-panel" aria-label="경로 검색">
+            <div className="panel-heading">
+              <div><span className="kicker">ROUTE PLANNER</span><h1>어디로 갈까요?</h1></div>
+              <button className="now-button" onClick={() => setDepartureClock('09:00')}>지금 출발</button>
+            </div>
+            <div className="place-stack">
+              <PlaceField label="출발" ariaLabel="출발지" marker="origin" value={origin} planner={planner} onSelect={setOrigin} />
+              {waypoints.map((waypoint, index) => <WaypointField key={waypoint.id} waypoint={waypoint} index={index} planner={planner}
+                onChange={(next) => setWaypoints((items) => items.map((item) => item.id === next.id ? next : item))}
+                onRemove={() => setWaypoints((items) => items.filter((item) => item.id !== waypoint.id))}
+                onMove={(direction) => setWaypoints((items) => moveItem(items, index, index + direction))} />)}
+              <PlaceField label="도착" ariaLabel="도착지" marker="destination" value={destination} planner={planner} onSelect={setDestination} />
+            </div>
+            <button className="add-waypoint" onClick={() => setWaypoints((items) => [...items, newWaypoint(items.length, parseClock(departureClock))])}>＋ 경유지 추가</button>
+            <div className="time-row"><label>출발 시간<input aria-label="출발 시간" type="time" value={departureClock} onChange={(event) => setDepartureClock(event.target.value)} /></label></div>
+            <div className="mode-grid" aria-label="탐색 모드">{modes.map((item) => <button key={item.id} className={mode === item.id ? `active ${item.id}` : ''} aria-pressed={mode === item.id} onClick={() => setMode(item.id)}><b>{item.label}</b><small>{item.hint}</small></button>)}</div>
+            <button className={`primary-action ${mode === 'hard' ? 'hard' : ''}`} onClick={() => void search()}>경로 찾기 <span>→</span></button>
+            <p className="search-status" role="status">{status}</p>
+          </section>
 
-      <section className="hero">
-        <div className="eyebrow">TIME-DEPENDENT TRANSIT LAB</div>
-        <h1>조금 이상해도,<br /><em>더 빨리.</em></h1>
-        <p>평범한 환승만으로는 놓치는 가장 빠른 길을 찾습니다.<br />지하철, 버스, 도보를 시간표 위에서 직접 계산합니다.</p>
-      </section>
+          {routes.length > 0 && <section className="results-section" aria-label="경로 목록">
+            <div className="section-title"><div><span className="kicker">ROUTE OPTIONS</span><h2>추천 경로</h2></div><span>{routes.length}개</span></div>
+            <div className="route-list">{routes.map((route, index) => <RouteCard key={route.id} route={route} rank={index + 1} selected={selectedRoute?.id === route.id} onSelect={() => chooseRoute(route)} />)}</div>
+          </section>}
 
-      <section className="planner" aria-label="경로 검색">
-        <div className="mode-tabs">
-          <button className={mode === 'normal' ? 'active' : ''} onClick={() => setMode('normal')}>
-            <b>Normal</b><small>안정적인 환승</small>
-          </button>
-          <button className={mode === 'hard' ? 'active hard' : ''} onClick={() => setMode('hard')}>
-            <b>Hard <span>⚡</span></b><small>공격적 최단시간</small>
-          </button>
+          {selectedRoute && selectedVariant && <RouteDetail planner={planner} route={selectedRoute} variant={selectedVariant} onVariantChange={setSelectedVariant} onStart={() => setActiveTrip(true)} />}
         </div>
-
-        <div className="route-form">
-          <label><span className="marker start">출</span><input aria-label="출발지" placeholder="출발지를 입력하세요" defaultValue="광화문" /></label>
-          {waypoints.map((point, index) => (
-            <label key={`${point}-${index}`}>
-              <span className="marker via">{index + 1}</span>
-              <input aria-label={`경유지 ${index + 1}`} value={point} onChange={(e) => setWaypoints(items => items.map((item, i) => i === index ? e.target.value : item))} />
-              <button className="remove" aria-label={`경유지 ${index + 1} 삭제`} onClick={() => setWaypoints(items => items.filter((_, i) => i !== index))}>×</button>
-            </label>
-          ))}
-          <label><span className="marker end">도</span><input aria-label="도착지" placeholder="도착지를 입력하세요" defaultValue="잠실역" /></label>
-          <div className="form-actions">
-            <button className="add" onClick={() => setWaypoints(items => [...items, ''])}>＋ 경유지 추가</button>
-            <label className="time">출발 <input type="time" defaultValue="09:00" /></label>
-            <button className="search">가장 빠른 길 찾기 <span>→</span></button>
-          </div>
-        </div>
-      </section>
-
-      <aside className={`mode-note ${mode}`}>
-        <span>{mode === 'hard' ? '⚡' : '✓'}</span>
-        <div><b>{mode === 'hard' ? 'Hard 모드는 더 깊게 탐색합니다' : 'Normal 모드는 여유 있게 탐색합니다'}</b>
-          <p>{mode === 'hard' ? '빠른 환승, 긴 도보, 반대 방향 이동까지 열어두고 도착시간을 비교합니다.' : '일반 보행과 충분한 환승시간을 기준으로 실용적인 경로를 찾습니다.'}</p></div>
-      </aside>
+        <TransitMap journey={selectedVariant?.journey} />
+      </div>
     </main>
   )
 }
+
+function Header() {
+  return <header className="topbar"><a className="brand" href="#">샛길 <span>WEIRD PATHFINDER</span></a><span className="mock-badge">MOCK NETWORK · 2026.08.12</span></header>
+}
+
+function PlaceField({ label, ariaLabel, marker, value, planner, onSelect }: { label: string; ariaLabel: string; marker: string; value?: PlaceSearchResult; planner: TransitPlanner; onSelect: (place: PlaceSearchResult | undefined) => void }) {
+  const [query, setQuery] = useState(value?.name ?? '')
+  const [suggestions, setSuggestions] = useState<PlaceSearchResult[]>([])
+  useEffect(() => { if (value) setQuery(value.name) }, [value])
+  const search = (next: string) => { setQuery(next); onSelect(undefined); void planner.searchPlaces(next).then(setSuggestions) }
+  return <label className="place-field"><span className={`place-dot ${marker}`} /><small>{label}</small><input aria-label={ariaLabel} value={query} onFocus={() => void planner.searchPlaces(query).then(setSuggestions)} onChange={(event) => search(event.target.value)} autoComplete="off" />
+    {suggestions.length > 0 && <span className="suggestions">{suggestions.map((place) => <button type="button" key={place.id} onClick={() => { onSelect(place); setQuery(place.name); setSuggestions([]) }}><b>{place.name}</b><small>{place.address}</small></button>)}</span>}
+  </label>
+}
+
+function WaypointField({ waypoint, index, planner, onChange, onRemove, onMove }: { waypoint: EditableWaypoint; index: number; planner: TransitPlanner; onChange: (waypoint: EditableWaypoint) => void; onRemove: () => void; onMove: (direction: -1 | 1) => void }) {
+  const [suggestions, setSuggestions] = useState<PlaceSearchResult[]>([])
+  const search = (query: string) => { onChange({ ...waypoint, query, place: undefined }); void planner.searchPlaces(query).then(setSuggestions) }
+  const setDwell = (dwellMinutes: number) => onChange({ ...waypoint, ...resolveWaypointTiming({ arrivalTime: waypoint.arrivalTime, dwellMinutes: Math.max(0, dwellMinutes) }) })
+  const setDeparture = (departureTime: number) => {
+    if (departureTime < waypoint.arrivalTime) return
+    onChange({ ...waypoint, ...resolveWaypointTiming({ arrivalTime: waypoint.arrivalTime, departureTime }) })
+  }
+  return <div className="waypoint-block" data-testid={`waypoint-${index + 1}`}>
+    <label className="place-field"><span className="place-dot waypoint" /><small>경유 {index + 1}</small><input aria-label={`경유지 ${index + 1}`} value={waypoint.query} onFocus={() => void planner.searchPlaces(waypoint.query).then(setSuggestions)} onChange={(event) => search(event.target.value)} autoComplete="off" />
+      <span className="waypoint-actions"><button aria-label={`경유지 ${index + 1} 위로`} disabled={index === 0} onClick={() => onMove(-1)}>↑</button><button aria-label={`경유지 ${index + 1} 아래로`} onClick={() => onMove(1)}>↓</button><button aria-label={`경유지 ${index + 1} 삭제`} onClick={onRemove}>×</button></span>
+      {suggestions.length > 0 && <span className="suggestions">{suggestions.map((place) => <button type="button" key={place.id} onClick={() => { onChange({ ...waypoint, place, query: place.name }); setSuggestions([]) }}><b>{place.name}</b><small>{place.address}</small></button>)}</span>}
+    </label>
+    <div className="waypoint-timing"><span>예상 도착 <b>{formatClock(waypoint.arrivalTime)}</b></span><label>체류 <input aria-label={`경유지 ${index + 1} 체류시간`} type="number" min="0" value={waypoint.dwellMinutes} onChange={(event) => setDwell(Number(event.target.value))} />분</label><label>출발 <input aria-label={`경유지 ${index + 1} 출발시간`} type="time" value={formatClock(waypoint.departureTime)} onChange={(event) => setDeparture(parseClock(event.target.value))} /></label></div>
+  </div>
+}
+
+function RouteCard({ route, rank, selected, onSelect }: { route: PlannedRoute; rank: number; selected: boolean; onSelect: () => void }) {
+  const variant = route.variants[0]
+  const journey = variant.journey
+  const walkMinutes = journey.segments.filter((segment) => segment.type === 'walk').reduce((sum, segment) => sum + segment.durationMinutes, 0)
+  return <button className={`route-card ${route.hard ? 'hard' : ''} ${selected ? 'selected' : ''}`} onClick={onSelect} aria-expanded={selected}>
+    <span className="route-rank">{route.hard ? 'HARD' : `${rank}`}</span><span className="route-main"><b>{durationLabel(journey.departureTime, variant.arrivalTime)}</b><small>{formatClock(variant.arrivalTime)} 도착</small></span>
+    <span className="route-metrics"><span>환승 {journey.transferCount}회</span><span>도보 {walkMinutes}분 · {distanceLabel(journey.walkingDistanceMeters)}</span></span>
+    {route.hard && <span className="hard-summary"><span>최단 가능 <b>{durationLabel(journey.departureTime, route.bestPossibleArrival)}</b></span><span>일반 이동 <b>{route.standardWalkingArrival ? durationLabel(journey.departureTime, route.standardWalkingArrival) : '—'}</b></span><span>빠른 환승 <b>{route.aggressiveTransferCount}회</b></span></span>}
+  </button>
+}
+
+function RouteDetail({ planner, route, variant, onVariantChange, onStart }: { planner: TransitPlanner; route: PlannedRoute; variant: TimingVariant; onVariantChange: (variant: TimingVariant) => void; onStart: () => void }) {
+  const paceVariants = meaningfulPaceVariants(route.variants)
+  return <section className={`route-detail ${route.hard ? 'hard' : ''}`} aria-label="경로 상세">
+    <div className="section-title"><div><span className="kicker">ROUTE DETAIL</span><h2>이동 상세</h2></div><b>{formatClock(variant.arrivalTime)} 도착</b></div>
+    {paceVariants.length > 1 && <div className="timing-branches" aria-label="환승 timing variants"><div className="branch-heading"><b>서울역 환승 선택</b><small>최종 도착이 달라지는 분기만 표시합니다</small></div>{paceVariants.map((item) => {
+      const choice = item.transferChoices[0]
+      const pace = variantPace(item)
+      return <button key={item.id} className={item.id === variant.id ? 'selected' : ''} onClick={() => onVariantChange(item)}><span className={`pace ${pace}`}>{paceLabel(pace)}</span><b>{choice ? `${choice.requiredMinutes}분 이내` : transferWalkDuration(item)} → {choice ? formatClock(choice.vehicleDepartureTime) : nextTransitClock(item)} 탑승</b><small>최종 {durationLabel(item.journey.departureTime, item.arrivalTime)}</small></button>
+    })}</div>}
+    <ol className="segment-list">{variant.journey.segments.map((segment, index) => <li key={`${segment.type}-${index}`} className={segment.type === 'walk' ? 'walk' : segment.mode}>
+      <span className="segment-icon">{segment.type === 'walk' ? (segment.purpose === 'transfer' ? '↗' : '●') : segment.mode === 'bus' ? 'B' : 'M'}</span>
+      <div><small>{formatClock(segment.departureTime)} → {formatClock(segment.arrivalTime)}</small><b>{segmentTitle(segment, planner)}</b><span>{segment.type === 'walk' ? `${segment.durationMinutes}분 · ${distanceLabel(segment.distanceMeters)}${segment.purpose === 'transfer' ? ` · ${paceLabel(segment.pace)} 환승` : ''}` : `${planner.pointName(segment.toStopId)} 도착`}</span></div>
+    </li>)}</ol>
+    <button className={`primary-action ${route.hard ? 'hard' : ''}`} onClick={onStart}>이 경로로 출발 <span>→</span></button>
+  </section>
+}
+
+function ActiveTrip({ planner, route, variant, onVariantChange, onBack }: { planner: TransitPlanner; route: PlannedRoute; variant: TimingVariant; onVariantChange: (variant: TimingVariant) => void; onBack: () => void }) {
+  const [elapsedSeconds, setElapsedSeconds] = useState(0)
+  useEffect(() => { const timer = window.setInterval(() => setElapsedSeconds((value) => value + 1), 1000); return () => window.clearInterval(timer) }, [])
+  const transitSegments = variant.journey.segments.filter((segment) => segment.type === 'transit')
+  const current = transitSegments[0]
+  const upcoming = transitSegments[1] ?? current
+  const vehicleVariants = uniqueVehicleVariants(route.variants)
+  const countdown = Math.max(0, upcoming.departureTime * 60 - variant.journey.departureTime * 60 - elapsedSeconds)
+  return <main className="app-shell active-shell"><Header /><div className="active-workspace"><section className="active-panel">
+    <button className="back-button" onClick={onBack}>← 경로 상세</button><span className="live-badge"><i /> ACTIVE TRIP</span>
+    <div className="active-hero"><span>{current?.mode === 'subway' ? '지하철' : '버스'}</span><h1>{current ? transitLabel(current.routeId, current.mode) : '도보 이동'}</h1><p>현재 이용 중인 교통수단</p></div>
+    <div className="progress-track"><i /><i className="future" /><i className="future" /></div>
+    <div className="active-grid"><div><small>현재 단계</small><b>1 / {variant.journey.segments.length}</b></div><div><small>다음 목표</small><b>{upcoming ? `${planner.pointName(upcoming.fromStopId)} 탑승` : '목적지 도착'}</b></div></div>
+    <div className="countdown-card"><small>다음 차량 출발까지</small><b aria-label="다음 차량 출발 countdown">{countdownLabel(countdown)}</b><span>{upcoming ? `${formatClock(upcoming.departureTime)} 출발 예정` : '도착 예정'}</span></div>
+    <div className="vehicle-choice"><div><b>실제 탑승 차량을 선택하세요</b><small>GPS로 자동 확정하지 않습니다</small></div>{vehicleVariants.slice(0, 2).map((item) => {
+      const vehicle = item.journey.segments.filter((segment) => segment.type === 'transit')[1] ?? item.journey.segments.find((segment) => segment.type === 'transit')
+      return vehicle && <button key={item.id} aria-pressed={item.id === variant.id} onClick={() => onVariantChange(item)}>{formatClock(vehicle.departureTime)} {vehicle.mode === 'subway' ? '열차' : '버스'} 탑승 <span>ETA {formatClock(item.arrivalTime)}</span></button>
+    })}<button aria-pressed={vehicleVariants.at(-1)?.id === variant.id} onClick={() => vehicleVariants.at(-1) && onVariantChange(vehicleVariants.at(-1)!)}>다른 차량 <span>{vehicleVariants.at(-1) ? `ETA ${formatClock(vehicleVariants.at(-1)!.arrivalTime)}` : '직접 선택'}</span></button></div>
+    <div className="eta-card"><small>현재 예상 최종 도착시간</small><b>{formatClock(variant.arrivalTime)}</b><span>총 {durationLabel(variant.journey.departureTime, variant.arrivalTime)}</span></div>
+  </section><TransitMap journey={variant.journey} active /></div></main>
+}
+
+function newWaypoint(index: number, departureTime: number): EditableWaypoint {
+  const arrivalTime = departureTime + 20 + index * 10
+  return { id: `waypoint-${Date.now()}-${index}`, query: '', arrivalTime, dwellMinutes: 0, departureTime: arrivalTime }
+}
+
+function moveItem<T>(items: T[], from: number, to: number): T[] {
+  if (to < 0 || to >= items.length) return items
+  const copy = [...items]; const [item] = copy.splice(from, 1); copy.splice(to, 0, item); return copy
+}
+
+function meaningfulPaceVariants(variants: TimingVariant[]): TimingVariant[] {
+  const byPace = new Map<TransferPace, TimingVariant>()
+  for (const variant of variants) {
+    const pace = variantPace(variant)
+    const current = byPace.get(pace)
+    if (!current || variant.arrivalTime < current.arrivalTime) byPace.set(pace, variant)
+  }
+  const ordered = (['fast', 'standard', 'relaxed'] as TransferPace[]).flatMap((pace) => byPace.get(pace) ? [byPace.get(pace)!] : [])
+  return new Set(ordered.map((variant) => variant.arrivalTime)).size > 1 ? ordered : []
+}
+
+function uniqueVehicleVariants(variants: TimingVariant[]): TimingVariant[] {
+  const seen = new Set<number>()
+  return variants.filter((variant) => {
+    const transit = variant.journey.segments.filter((segment) => segment.type === 'transit')[1] ?? variant.journey.segments.find((segment) => segment.type === 'transit')
+    if (!transit || seen.has(transit.departureTime)) return false
+    seen.add(transit.departureTime); return true
+  }).sort((a, b) => a.arrivalTime - b.arrivalTime)
+}
+
+function variantPace(variant: TimingVariant): TransferPace {
+  return variant.transferChoices[0]?.pace ?? findTransferWalk(variant)?.pace ?? 'standard'
+}
+
+function findTransferWalk(variant: TimingVariant) { return variant.journey.segments.find((segment) => segment.type === 'walk' && segment.purpose === 'transfer') as Extract<Journey['segments'][number], { type: 'walk' }> | undefined }
+function transferWalkDuration(variant: TimingVariant): string { const walk = findTransferWalk(variant); return walk ? `${walk.durationMinutes}분 이내` : '바로 환승' }
+function nextTransitClock(variant: TimingVariant): string { const transits = variant.journey.segments.filter((segment) => segment.type === 'transit'); return transits[1] ? formatClock(transits[1].departureTime) : formatClock(transits[0]?.departureTime ?? variant.arrivalTime) }
+function segmentTitle(segment: Journey['segments'][number], planner: TransitPlanner): string { if (segment.type === 'walk') return segment.purpose === 'transfer' ? `${planner.pointName(segment.toStopId)}까지 환승` : `${planner.pointName(segment.toStopId)}까지 도보`; return `${transitLabel(segment.routeId, segment.mode)} · ${planner.pointName(segment.toStopId)} 방면` }
+function transitLabel(routeId: string, mode: 'bus' | 'subway'): string { return mode === 'bus' ? `${routeId.replace('bus-', '')}번 버스` : routeId.replace('subway-', '') === '2' ? '2호선 급행' : routeId }
+function durationLabel(from: number, to: number): string { return `${Math.max(0, to - from)}분` }
+function distanceLabel(meters: number): string { return meters >= 1000 ? `${(meters / 1000).toFixed(1)}km` : `${meters}m` }
+function paceLabel(pace: TransferPace): string { return pace === 'fast' ? 'Fast' : pace === 'standard' ? 'Standard' : 'Relaxed' }
+function countdownLabel(seconds: number): string { const minutes = Math.floor(seconds / 60); const rest = seconds % 60; return `${minutes}분 ${String(rest).padStart(2, '0')}초` }
