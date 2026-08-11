@@ -96,9 +96,9 @@ export class HardRouter {
       if (!active) continue
 
       const arrivalBound = topKArrivalBound(patternBest, maxPatterns)
-      if (state.time > arrivalBound) {
-        diagnostics.boundPrunedStates += 1 + queue.length
-        break
+      if (state.time > arrivalBound && !canCompleteSelectedPattern(state.routePattern, patternBest, maxPatterns)) {
+        diagnostics.boundPrunedStates++
+        continue
       }
 
       diagnostics.expandedStates++
@@ -266,4 +266,24 @@ export class HardRouter {
 function topKArrivalBound(patternBest: ReadonlyMap<string, number>, maxPatterns: number): number {
   if (patternBest.size < maxPatterns) return Infinity
   return [...patternBest.values()].sort((a, b) => a - b)[maxPatterns - 1]
+}
+
+/**
+ * A state slower than the current top-K arrival bound cannot introduce a
+ * better route candidate. It can still provide a standard/relaxed timing
+ * variant for an already selected pattern, so retain matching prefixes.
+ */
+function canCompleteSelectedPattern(
+  routePattern: readonly string[],
+  patternBest: ReadonlyMap<string, number>,
+  maxPatterns: number,
+): boolean {
+  const selectedPatterns = [...patternBest.entries()]
+    .sort((a, b) => a[1] - b[1])
+    .slice(0, maxPatterns)
+    .map(([pattern]) => pattern)
+
+  if (routePattern.length === 0) return selectedPatterns.length > 0
+  const prefix = routePattern.join('>')
+  return selectedPatterns.some((pattern) => pattern === prefix || pattern.startsWith(`${prefix}>`))
 }

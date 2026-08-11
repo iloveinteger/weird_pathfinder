@@ -50,7 +50,7 @@ Hard는 scalar score를 사용하지 않는다. 같은 operational signature 안
 
 A의 모든 성분이 B 이하이고 하나 이상이 더 작을 때만 A가 B를 지배한다. 빠르지만 더 걷는 상태, 빠르지만 fast 환승 부담이 큰 상태, 환승이 많지만 더 빠른 상태는 서로 non-dominated이므로 모두 유지된다.
 
-operational signature는 `위치 + 직전 노선 + 직전 실제 차량`이다. 단순히 같은 정류장에 있다는 이유로 다른 차량 문맥을 합치지 않는다. 현재 Hard에는 경로 이력 기반 금지 규칙이 없으므로 반대 방향, 동일역 재진입, 우회, 긴 도보와 다환승도 자연스럽게 확장된다.
+operational signature는 `위치 + 직전 노선 + 직전 실제 차량 + 진행 중인 환승 pace`이다. 단순히 같은 정류장에 있다는 이유로 다른 차량 문맥을 합치지 않으며, 아직 탑승 결과에 기록되지 않은 standard/relaxed 분기도 서로 지배하지 않는다. 현재 Hard에는 경로 이력 기반 금지 규칙이 없으므로 반대 방향, 동일역 재진입, 우회, 긴 도보와 다환승도 자연스럽게 확장된다.
 
 ## 안전한 병합
 
@@ -66,7 +66,7 @@ operational signature는 `위치 + 직전 노선 + 직전 실제 차량`이다. 
 
 ## 종료 조건
 
-모든 schedule과 walking duration이 음수가 아니라는 조건을 사용한다. 요청한 route candidate 수만큼 서로 다른 pattern의 목적지를 이미 찾았다면, 그중 가장 늦은 top-K 도착시각이 안전한 상한이 된다. priority queue의 다음 state 시각이 이 상한보다 **큰** 경우 그 state에서 출발하는 어떤 경로도 top-K 도착을 개선하거나 동률을 만들 수 없으므로 탐색을 끝낸다.
+모든 schedule과 walking duration이 음수가 아니라는 조건을 사용한다. 요청한 route candidate 수만큼 서로 다른 pattern의 목적지를 이미 찾았다면, 그중 가장 늦은 top-K 도착시각이 안전한 상한이 된다. 다음 state 시각이 이 상한보다 **큰** 경우 새 top-K candidate를 만들 수 없으므로 제거한다. 다만 이미 선택된 pattern의 prefix인 state는 더 느린 standard/relaxed timing variant를 만들 수 있어 계속 확장한다.
 
 pattern 수가 K보다 적으면 이 bound를 쓰지 않고 유한한 mock schedule을 끝까지 탐색한다. 임의의 환승 수, 도보 거리, segment 수 제한은 Hard에 적용하지 않는다.
 
@@ -85,7 +85,7 @@ candidate는 `bestPossibleArrival` 오름차순이며, 동률이면 환승 수�
 
 ## 진단과 현재 위험요소
 
-`npm run test:diagnostic`은 작은 mock과 24-stop synthetic network에서 상태 생성·확장·dominance·병합·queue 크기·실행시간을 출력한다. 2026-08-12 개발 환경의 synthetic 기준 예시는 약 72,000개 생성, 1,600개 확장, 최대 queue 약 700, 검색 약 0.4초였다. 수치는 하드웨어와 런타임에 따라 달라진다.
+`npm run test:diagnostic`은 작은 mock과 24-stop synthetic network에서 상태 생성·확장·dominance·병합·queue 크기·실행시간을 출력한다. 2026-08-12 개발 환경에서 timing variant 보존을 포함한 synthetic 기준 예시는 약 227,000개 생성, 5,800개 확장, 최대 queue 약 1,400, 검색 약 1초였다. 수치는 하드웨어와 런타임에 따라 달라진다.
 
 현재 성능상 위험요소:
 

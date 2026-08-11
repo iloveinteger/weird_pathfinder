@@ -29,11 +29,12 @@ export function hardDominates(a: HardParetoVector, b: HardParetoVector): boolean
 }
 
 /**
- * Vehicle context is part of the state signature. Merely reaching the same
- * stop is insufficient because transfer accounting and continuation differ.
+ * Vehicle context and an uncommitted transfer pace are part of the state
+ * signature. Merely reaching the same stop is insufficient because transfer
+ * accounting, result metadata, and continuation differ.
  */
 export function hardStateSignature(state: HardSearchState): string {
-  return `${state.locationId}|${state.currentRouteId ?? '-'}|${state.currentTripId ?? '-'}`
+  return `${state.locationId}|${state.currentRouteId ?? '-'}|${state.currentTripId ?? '-'}|${state.pendingTransfer?.pace ?? '-'}`
 }
 
 export function equivalentFutureState(a: HardSearchState, b: HardSearchState): boolean {

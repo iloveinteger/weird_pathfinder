@@ -5,7 +5,7 @@ import { mockNetwork } from '../../mock/network'
 import type { TransitNetwork } from '../network'
 import { TimeDependentRouter } from '../router'
 import { HardRouter } from './hardRouter'
-import { hardDominates, insertHardPareto } from './pareto'
+import { hardDominates, hardStateSignature, insertHardPareto } from './pareto'
 import type { HardSearchState } from './types'
 
 const point = (id: string, longitude = 126): Stop => ({
@@ -111,6 +111,43 @@ describe('Hard time-dependent routing', () => {
       parseClock('09:35'), parseClock('09:37'),
     ]))
   })
+
+  it('keeps a later departure that overtakes an earlier vehicle', () => {
+    const routes = [route('r', ['O', 'D'])]
+    const trips = [
+      trip('early-slow', 'r', ['O', 'D'], [1, 50]),
+      trip('late-fast', 'r', ['O', 'D'], [5, 20]),
+    ]
+    const result = new HardRouter(network(['O', 'D'], routes, trips)).search({
+      originId: 'O', destinationId: 'D', departureTime: 0,
+    })
+    const candidate = result.candidates.find((item) => item.patternKey === 'r')!
+    expect(candidate.bestPossibleArrival).toBe(20)
+    expect(candidate.timingVariants.map((item) => item.tripIds[0])).toEqual(expect.arrayContaining([
+      'early-slow', 'late-fast',
+    ]))
+  })
+
+  it('preserves fast, standard and relaxed final ETAs after the top-K bound is known', () => {
+    const routes = [route('feed', ['O', 'X']), route('connector', ['P', 'D'])]
+    const trips = [
+      trip('feed-1', 'feed', ['O', 'X'], [0, 10]),
+      trip('connector-fast', 'connector', ['P', 'D'], [13, 14]),
+      trip('connector-standard', 'connector', ['P', 'D'], [14, 30]),
+      trip('connector-relaxed', 'connector', ['P', 'D'], [16, 40]),
+    ]
+    const result = new HardRouter(network(['O', 'X', 'P', 'D'], routes, trips, [
+      { fromStopId: 'X', toStopId: 'P', distanceMeters: 300, durationMinutes: 4, purpose: 'transfer' },
+    ])).search({ originId: 'O', destinationId: 'D', departureTime: 0, maxRouteCandidates: 1 })
+    const variants = result.candidates[0].timingVariants
+    const earliestByPace = (pace: 'fast' | 'standard' | 'relaxed') => Math.min(
+      ...variants.filter((variant) => variant.transferChoices[0]?.pace === pace).map((variant) => variant.arrivalTime),
+    )
+    expect(earliestByPace('fast')).toBe(14)
+    expect(earliestByPace('standard')).toBe(30)
+    expect(earliestByPace('relaxed')).toBe(40)
+    expect(result.candidates[0].standardWalkingArrival).toBe(30)
+  })
 })
 
 const hardState = (overrides: Partial<HardSearchState> = {}): HardSearchState => ({
@@ -152,5 +189,17 @@ describe('Hard Pareto frontier and merging', () => {
 
     const differentVehicle = hardState({ id: 'c', currentTripId: 'other-car', predecessor: predecessorB })
     expect(insertHardPareto([a], differentVehicle).merged).toBe(false)
+  })
+
+  it('does not prune a pending relaxed transfer as a standard transfer', () => {
+    const standard = hardState({
+      id: 'standard', time: 14, walkingMinutes: 4,
+      pendingTransfer: { atStopId: 'S', fromTripId: 'trip', pace: 'standard', requiredMinutes: 4, standardMinutes: 4, readyTime: 14 },
+    })
+    const relaxed = hardState({
+      id: 'relaxed', time: 16, walkingMinutes: 6,
+      pendingTransfer: { atStopId: 'S', fromTripId: 'trip', pace: 'relaxed', requiredMinutes: 6, standardMinutes: 4, readyTime: 16 },
+    })
+    expect(hardStateSignature(standard)).not.toBe(hardStateSignature(relaxed))
   })
 })
