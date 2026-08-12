@@ -2,5 +2,8 @@ node_modules/
 dist/
 coverage/
 .vite*.log
+.env
 .env.local
+.env.*
+!.env.example
 *.tsbuildinfo

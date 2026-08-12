@@ -20,7 +20,7 @@ npm test
 npm run build
 ```
 
-GitHub Pages 배포 경로는 `/weird_pathfinder/`로 설정되어 있습니다. `main` 브랜치에 push하면 `.github/workflows/deploy.yml`이 테스트와 빌드를 실행하고 `dist`를 Pages에 배포합니다. 저장소의 **Settings → Pages → Source**는 **GitHub Actions**로 선택해야 합니다.
+GitHub Pages 배포 경로는 `/weird_pathfinder/`로 설정되어 있습니다. `main` 브랜치에 push하면 `.github/workflows/deploy.yml`이 테스트와 빌드를 실행하고 `dist`를 Pages에 배포합니다. build에는 Actions secret의 `VITE_KAKAO_JAVASCRIPT_KEY`만 전달됩니다. 저장소의 **Settings → Pages → Source**는 **GitHub Actions**로 선택해야 합니다.
 
 ## 구조
 
@@ -63,7 +63,7 @@ UI는 routing class나 mock data를 직접 계산하지 않습니다. `CoreTrans
 
 ## 외부 API 연결 지점
 
-실제 연동은 `src/providers/interfaces.ts`의 계약을 구현하는 adapter를 추가하는 방식입니다.
+실제 연동은 `src/providers/interfaces.ts`의 계약을 구현하는 adapter를 추가하는 방식입니다. 환경변수, provider mode, frontend/backend 경계와 보안 원칙은 [API 연동 준비](docs/API_INTEGRATION.md)를 참고하세요.
 
 | Provider | 예정 구현 | 책임 |
 |---|---|---|

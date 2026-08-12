@@ -1,14 +1,12 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { CoreTransitPlanner } from './application/transitPlanner'
-import { mockNetwork } from './mock/network'
-import { MockPlaceProvider } from './mock/providers'
-import { TimeDependentRouter } from './routing/router'
+import { createTransitApplication } from './application/createApplication'
+import { loadPublicRuntimeConfig } from './config/runtime'
 import { App } from './ui/App'
 import './ui/styles.css'
 
-const planner = new CoreTransitPlanner(new MockPlaceProvider(), new TimeDependentRouter(mockNetwork), mockNetwork.points)
+const application = createTransitApplication(loadPublicRuntimeConfig(import.meta.env))
 
 createRoot(document.getElementById('root')!).render(
-  <StrictMode><App planner={planner} /></StrictMode>,
+  <StrictMode><App planner={application.planner} /></StrictMode>,
 )

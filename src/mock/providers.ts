@@ -1,5 +1,5 @@
 import type { Coordinate, PlaceSearchResult, RouteId, StopId, TransitPoint } from '../domain/models'
-import type { ArrivalEstimate, BusProvider, PlaceProvider, SubwayProvider, VehiclePosition, WalkingProvider, WalkingRoute } from '../providers/interfaces'
+import type { ArrivalEstimate, BusProvider, PlaceProvider, SubwayProvider, TransitProviderSet, VehiclePosition, WalkingProvider, WalkingRoute } from '../providers/interfaces'
 import { mockPoints, mockRoutes, mockTrips } from './network'
 
 export class MockPlaceProvider implements PlaceProvider {
@@ -34,4 +34,13 @@ export class MockSubwayProvider implements SubwayProvider {
   async getRoutes() { return mockRoutes.filter((route) => route.mode === 'subway') }
   async getTrips(serviceDate: string) { return mockTrips.filter((trip) => trip.serviceDate === serviceDate && trip.routeId.startsWith('subway-')) }
   async getArrivals(_stopId: StopId): Promise<ArrivalEstimate[]> { return [] }
+}
+
+export function createMockProviderSet(): TransitProviderSet {
+  return {
+    place: new MockPlaceProvider(),
+    walking: new MockWalkingProvider(),
+    bus: new MockBusProvider(),
+    subway: new MockSubwayProvider(),
+  }
 }

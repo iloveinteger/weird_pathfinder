@@ -41,7 +41,7 @@ export function App({ planner }: AppProps) {
       setOrigin(places.find((place) => place.id === 'gwanghwamun') ?? places[0])
       setDestination(places.find((place) => place.id === 'jamsil') ?? places.at(-1))
       setStatus('Mock 시간표 준비 완료')
-    })
+    }).catch((error: unknown) => setStatus(providerFailureMessage(error)))
   }, [planner])
 
   const chooseRoute = (route: PlannedRoute) => {
@@ -56,13 +56,19 @@ export function App({ planner }: AppProps) {
       return
     }
     setStatus('시간표를 탐색하고 있습니다…')
-    const found = await planner.findRoutes({
-      originId: origin.id,
-      destinationId: destination.id,
-      departureTime: parseClock(departureClock),
-      waypoints: waypoints.map((waypoint) => ({ id: waypoint.id, placeId: waypoint.place!.id, name: waypoint.place!.name, dwellMinutes: waypoint.dwellMinutes })),
-      mode,
-    })
+    let found: PlannedRoute[]
+    try {
+      found = await planner.findRoutes({
+        originId: origin.id,
+        destinationId: destination.id,
+        departureTime: parseClock(departureClock),
+        waypoints: waypoints.map((waypoint) => ({ id: waypoint.id, placeId: waypoint.place!.id, name: waypoint.place!.name, dwellMinutes: waypoint.dwellMinutes })),
+        mode,
+      })
+    } catch (error: unknown) {
+      setStatus(providerFailureMessage(error))
+      return
+    }
     setRoutes(found)
     if (found[0]) {
       chooseRoute(found[0])
@@ -244,3 +250,4 @@ function durationLabel(from: number, to: number): string { return `${Math.max(0,
 function distanceLabel(meters: number): string { return meters >= 1000 ? `${(meters / 1000).toFixed(1)}km` : `${meters}m` }
 function paceLabel(pace: TransferPace): string { return pace === 'fast' ? 'Fast' : pace === 'standard' ? 'Standard' : 'Relaxed' }
 function countdownLabel(seconds: number): string { const minutes = Math.floor(seconds / 60); const rest = seconds % 60; return `${minutes}분 ${String(rest).padStart(2, '0')}초` }
+function providerFailureMessage(error: unknown): string { return error instanceof Error ? error.message : 'Provider unavailable' }

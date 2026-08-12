@@ -52,3 +52,11 @@ export interface SubwayProvider {
   getTrips(serviceDate: string): Promise<TransitTrip[]>
   getArrivals(stopId: StopId): Promise<ArrivalEstimate[]>
 }
+
+/** A complete set of normalized data adapters selected at the application boundary. */
+export interface TransitProviderSet {
+  place: PlaceProvider
+  walking: WalkingProvider
+  bus: BusProvider
+  subway: SubwayProvider
+}
