@@ -53,9 +53,12 @@ describe('real provider smoke', () => {
       if (stations[0].kind !== 'station') throw new Error('TAGO subway response was not normalized as a station')
       expect(stations[0].lineIds.length).toBeGreaterThan(0)
       const serviceDate = new Date().toISOString().slice(0, 10)
-      const downTrips = await providers.subwayTimetable('MTRS11133', serviceDate, '01', 'D')
-      const upTrips = downTrips.length ? [] : await providers.subwayTimetable('MTRS11133', serviceDate, '01', 'U')
-      const trips = downTrips.length ? downTrips : upTrips
+      let trips = []
+      for (const station of stations) {
+        trips = await providers.subwayTimetable(station.id, serviceDate, '01', 'D')
+        if (!trips.length) trips = await providers.subwayTimetable(station.id, serviceDate, '01', 'U')
+        if (trips.length) break
+      }
       expect(trips.length).toBeGreaterThan(0)
     } catch (error) {
       if (isTagoAccessUnavailable(error)) skip('The TAGO gateway is unreachable or the key is not approved for subway information')

@@ -123,7 +123,7 @@ GitHub repository secret은 Vercel로 자동 전달되지 않는다. Vercel depl
 - `npm run test:smoke`: 네 backend key가 모두 있는 환경에서 실제 provider 및 서울역→강남역 direct/waypoint/Hard pipeline을 호출하며, 없으면 skip. TAGO gateway timeout 또는 특정 TAGO service의 HTTP 403은 외부 접근 불가/활용승인 없음으로 명시적으로 skip한다. malformed response, quota, 그 밖의 HTTP 오류는 계속 실패한다.
 - `.github/workflows/api-smoke.yml`: GitHub repository secrets를 값 출력 없이 smoke test env로 주입하는 수동 workflow
 
-2026-08-13 TAGO 지하철 활용신청 후 HTTP 403은 해소되었다. 실제 응답 field가 camelCase(`subwayStationId`, `subwayRouteName`, `arrTime`, `depTime`)이고 역 검색어가 `서울역`이어야 한다는 점을 adapter에 반영했다. 역별 시간표 smoke는 다중 노선 검색 결과의 임의 첫 항목을 사용하지 않고 공공데이터포털 공식 서울역 1호선 sample ID `MTRS11133`과 유효한 상·하행을 확인한다. TAGO gateway는 간헐적으로 timeout을 반환하므로 제한된 retry 뒤 구조화된 timeout으로 처리한다.
+2026-08-13 TAGO 지하철 활용신청 후 HTTP 403은 해소되었다. 실제 응답 field가 camelCase(`subwayStationId`, `subwayRouteName`, `arrTime`, `depTime`)이고 역 검색어가 `서울역`이어야 한다는 점을 adapter에 반영했다. 역별 시간표는 같은 역의 노선별 station ID와 상·하행에 따라 0건일 수 있으므로, smoke는 실제 역 검색 결과에서 데이터가 제공되는 노선·방향 조합을 확인한다. TAGO gateway는 간헐적으로 timeout을 반환하므로 제한된 retry 뒤 구조화된 timeout으로 처리한다.
 
 real mode의 최초 출발시각과 `지금 출발`은 브라우저의 현재 로컬 시각을 사용한다. 사용자가 time input을 변경하면 해당 지정 시각이 network와 Normal/Hard routing input에 그대로 전달된다. real mode는 API나 지도 실패 시 mock 데이터를 표시하지 않는다.
 
