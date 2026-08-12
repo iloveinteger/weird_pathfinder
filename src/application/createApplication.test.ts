@@ -24,7 +24,10 @@ describe('application composition', () => {
   })
 
   it('switches real mode to the backend-backed place provider', async () => {
-    const fetcher = vi.fn(async () => new Response(JSON.stringify([{ id: 'kakao:1', name: '서울역', address: '서울', coordinate: { latitude: 37.55, longitude: 126.97 } }]), { status: 200, headers: { 'content-type': 'application/json' } }))
+    const fetcher = vi.fn(function (this: unknown) {
+      expect(this).toBe(window)
+      return Promise.resolve(new Response(JSON.stringify([{ id: 'kakao:1', name: '서울역', address: '서울', coordinate: { latitude: 37.55, longitude: 126.97 } }]), { status: 200, headers: { 'content-type': 'application/json' } }))
+    })
     vi.stubGlobal('fetch', fetcher)
     const application = createTransitApplication({ providerMode: 'real', apiBaseUrl: 'https://backend.example/api' })
     await expect(application.planner.searchPlaces('서울역')).resolves.toHaveLength(1)

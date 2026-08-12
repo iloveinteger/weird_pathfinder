@@ -21,4 +21,12 @@ describe('serverless backend proxy', () => {
     const quota = await backend({ method: 'GET', url: 'https://api.test/api/places/search?q=x' })
     expect(quota).toMatchObject({ status: 429, body: { error: { code: 'QUOTA_EXCEEDED', provider: 'kakao' } } })
   })
+
+  it('allows both production frontends and project preview deployments', async () => {
+    const backend = createBackend({ ALLOWED_ORIGIN: 'https://iloveinteger.github.io' }, providers())
+    for (const origin of ['https://iloveinteger.github.io', 'https://weirdpath.vercel.app', 'https://weirdpath-preview-123.vercel.app']) {
+      const response = await backend({ method: 'OPTIONS', url: 'https://api.test/api/places/search', headers: { origin } })
+      expect(response.headers['access-control-allow-origin']).toBe(origin)
+    }
+  })
 })

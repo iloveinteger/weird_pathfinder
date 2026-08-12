@@ -59,13 +59,24 @@ function coordinate(url: URL, prefix = '') {
 }
 
 function corsHeaders(origin: string | null, configured?: string): Record<string, string> {
-  const allowed = configured?.split(',').map((item) => item.trim()).filter(Boolean) ?? ['http://localhost:5173', 'https://iloveinteger.github.io']
+  const allowed = new Set([
+    'http://localhost:5173',
+    'https://iloveinteger.github.io',
+    'https://weirdpath.vercel.app',
+    ...(configured?.split(',').map((item) => item.trim()).filter(Boolean) ?? []),
+  ])
+  const allowedOrigin = origin && (allowed.has(origin) || isProjectPreviewOrigin(origin)) ? origin : [...allowed][0]
   return {
-    'access-control-allow-origin': origin && allowed.includes(origin) ? origin : allowed[0],
+    'access-control-allow-origin': allowedOrigin,
     'access-control-allow-methods': 'GET, OPTIONS',
     'access-control-allow-headers': 'content-type',
     vary: 'Origin',
   }
+}
+
+function isProjectPreviewOrigin(origin: string): boolean {
+  try { return new URL(origin).protocol === 'https:' && /^weirdpath(?:-[a-z0-9-]+)?\.vercel\.app$/i.test(new URL(origin).hostname) }
+  catch { return false }
 }
 
 function cacheControl(path: string): string {

@@ -16,18 +16,19 @@ import type {
 interface BackendErrorBody { error?: { code?: string; message?: string; provider?: string } }
 
 export class BackendApiClient {
-  constructor(private readonly baseUrl: string, private readonly fetcher: typeof fetch = fetch) {}
+  constructor(private readonly baseUrl: string, private readonly fetcher?: typeof fetch) {}
 
   async get<T>(path: string, params: Record<string, string | number | undefined> = {}, providerId: ProviderId = 'transit-network'): Promise<T> {
     if (!this.baseUrl) throw new ProviderUnavailableError(providerId)
     const url = new URL(`${this.baseUrl.replace(/\/$/, '')}${path}`, window.location.origin)
     Object.entries(params).forEach(([name, value]) => { if (value !== undefined) url.searchParams.set(name, String(value)) })
     let response: Response | undefined
+    const fetcher = this.fetcher ?? ((input: RequestInfo | URL, init?: RequestInit) => window.fetch(input, init))
     for (let attempt = 0; attempt < 2; attempt++) {
       const controller = new AbortController()
       const timeout = window.setTimeout(() => controller.abort(), 12_000)
       try {
-        response = await this.fetcher(url.toString(), { headers: { accept: 'application/json' }, signal: controller.signal })
+        response = await fetcher(url.toString(), { headers: { accept: 'application/json' }, signal: controller.signal })
         if (response.status < 500 || attempt === 1) break
       } catch {
         if (attempt === 1) throw new ProviderUnavailableError(providerId)
@@ -100,7 +101,7 @@ export class BackendTransitNetworkProvider implements TransitNetworkProvider {
   }
 }
 
-export function createRealProviderSet(baseUrl: string, fetcher: typeof fetch = fetch): TransitProviderSet {
+export function createRealProviderSet(baseUrl: string, fetcher?: typeof fetch): TransitProviderSet {
   const client = new BackendApiClient(baseUrl, fetcher)
   return { place: new KakaoLocalPlaceProvider(client), walking: new RealWalkingProvider(client), bus: new PublicDataBusProvider(client), subway: new SeoulRealtimeSubwayProvider(client), network: new BackendTransitNetworkProvider(client) }
 }
