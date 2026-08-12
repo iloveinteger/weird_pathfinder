@@ -67,7 +67,7 @@ export class PublicDataBusProvider implements BusProvider {
 
 export class SeoulRealtimeSubwayProvider implements SubwayProvider {
   constructor(private readonly client: BackendApiClient) {}
-  getStations(query = '서울'): Promise<TransitPoint[]> { return this.client.get('/subway/stations', { q: query }) }
+  getStations(query = '서울역'): Promise<TransitPoint[]> { return this.client.get('/subway/stations', { q: query }) }
   async getRoutes(): Promise<TransitRoute[]> {
     const stations = await this.getStations()
     const lineIds = [...new Set(stations.flatMap((station) => station.kind === 'station' ? station.lineIds : []))]

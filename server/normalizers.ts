@@ -88,14 +88,24 @@ export function normalizeTagoVehicles(raw: unknown, routeId: string, observedAt 
 }
 
 export function normalizeTagoSubwayStations(raw: unknown): TransitPoint[] {
-  return tagoItems(raw).map((row) => ({ id: text(row.subwaystationid) || text(row.stationid), kind: 'station' as const, name: text(row.subwaystationname) || text(row.stationname), lineIds: [text(row.routename) || text(row.routeid)].filter(Boolean), coordinate: { latitude: number(row.gpslati), longitude: number(row.gpslong) } })).filter((item) => item.id && item.name && Number.isFinite(item.coordinate.latitude) && Number.isFinite(item.coordinate.longitude))
+  return tagoItems(raw).map((row) => ({
+    id: text(row.subwayStationId) || text(row.subwaystationid) || text(row.stationid),
+    kind: 'station' as const,
+    name: text(row.subwayStationName) || text(row.subwaystationname) || text(row.stationname),
+    lineIds: [text(row.subwayRouteId) || text(row.subwayRouteName) || text(row.routename) || text(row.routeid)].filter(Boolean),
+    // TAGO's station-list operation does not publish coordinates. Keep the
+    // existing domain shape; routing geometry comes from the network provider.
+    coordinate: { latitude: number(row.gpslati), longitude: number(row.gpslong) },
+  })).filter((item) => item.id && item.name && item.lineIds.length)
 }
 
 export function normalizeTagoSubwayTrips(raw: unknown, serviceDate: string): TransitTrip[] {
   return tagoItems(raw).map((row, index) => {
-    const stationId = text(row.subwaystationid) || text(row.stationid); const routeId = text(row.routeid) || `subway:${text(row.routename)}`; const clock = text(row.arrivaltime) || text(row.deptime) || text(row.departuretime)
+    const stationId = text(row.subwayStationId) || text(row.subwaystationid) || text(row.stationid)
+    const routeId = text(row.subwayRouteId) || text(row.routeid) || `subway:${text(row.subwayRouteName) || text(row.routename)}`
+    const clock = text(row.arrTime) || text(row.depTime) || text(row.arrivaltime) || text(row.deptime) || text(row.departuretime)
     const minutes = parseServiceClock(clock)
-    return { id: text(row.trainno) || `${routeId}:${serviceDate}:${index}`, routeId, headsign: text(row.endsubwaystationname) || text(row.endstationname), serviceDate, stops: stationId && minutes !== undefined ? [{ stopId: stationId, arrivalTime: minutes, departureTime: minutes, sequence: 0 }] : [] }
+    return { id: text(row.trainno) || `${routeId}:${serviceDate}:${index}`, routeId, headsign: text(row.endSubwayStationNm) || text(row.endsubwaystationname) || text(row.endstationname), serviceDate, stops: stationId && minutes !== undefined ? [{ stopId: stationId, arrivalTime: minutes, departureTime: minutes, sequence: 0 }] : [] }
   }).filter((trip) => trip.stops.length)
 }
 

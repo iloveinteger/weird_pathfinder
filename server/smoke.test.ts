@@ -46,9 +46,13 @@ describe('real provider smoke', () => {
 
   smoke('7 TAGO subway information', async ({ skip }) => {
     try {
-      const stations = await providers.subwayStations('서울')
+      const stations = await providers.subwayStations('서울역')
       expect(stations.length).toBeGreaterThan(0)
-      expect(await providers.subwayTimetable(stations[0].id, new Date().toISOString().slice(0, 10))).toBeInstanceOf(Array)
+      expect(stations[0].kind).toBe('station')
+      if (stations[0].kind !== 'station') throw new Error('TAGO subway response was not normalized as a station')
+      expect(stations[0].lineIds.length).toBeGreaterThan(0)
+      const trips = await providers.subwayTimetable(stations[0].id, new Date().toISOString().slice(0, 10), '01', 'D')
+      expect(trips.length).toBeGreaterThan(0)
     } catch (error) {
       if (isTagoAccessUnavailable(error)) skip('The TAGO gateway is unreachable or the key is not approved for subway information')
       throw error

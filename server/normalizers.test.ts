@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { ServiceError } from './errors'
 import { TimeDependentRouter } from '../src/routing/router'
-import { normalizeKakaoPlaces, normalizeKakaoTransitNetwork, normalizeKakaoWalking, normalizeSeoulRealtime, normalizeTagoArrivals, normalizeTagoStops } from './normalizers'
+import { normalizeKakaoPlaces, normalizeKakaoTransitNetwork, normalizeKakaoWalking, normalizeSeoulRealtime, normalizeTagoArrivals, normalizeTagoStops, normalizeTagoSubwayStations, normalizeTagoSubwayTrips } from './normalizers'
 
 const tago = (item: unknown, resultCode = '00') => ({ response: { header: { resultCode, resultMsg: 'OK' }, body: { items: { item } } } })
 
@@ -15,6 +15,13 @@ describe('provider response normalization', () => {
     expect(normalizeTagoStops(tago({ nodeid: 'S1', nodenm: '정류장', gpslati: '37.5', gpslong: '127.0' }))[0]).toMatchObject({ id: 'S1', kind: 'bus-stop' })
     const observedAt = new Date('2026-08-13T00:00:00Z')
     expect(normalizeTagoArrivals(tago({ routeid: 'R1', arrtime: 60 }), 'S1', observedAt)[0].expectedAt.toISOString()).toBe('2026-08-13T00:01:00.000Z')
+  })
+
+  it('normalizes the current TAGO subway station, line and timetable fields', () => {
+    const stations = normalizeTagoSubwayStations(tago({ subwayStationId: 'MTRS11133', subwayStationName: '서울역', subwayRouteName: '서울 1호선' }))
+    expect(stations[0]).toMatchObject({ id: 'MTRS11133', name: '서울역', lineIds: ['서울 1호선'] })
+    const trips = normalizeTagoSubwayTrips(tago({ subwayRouteId: 'MTRS11', subwayStationId: 'MTRS11133', endSubwayStationNm: '신창', arrTime: '052000', depTime: '052030' }), '2026-08-13')
+    expect(trips[0]).toMatchObject({ routeId: 'MTRS11', headsign: '신창', stops: [{ stopId: 'MTRS11133', arrivalTime: 320 }] })
   })
 
   it('keeps Seoul realtime data as an overlay instead of mutating static trips', () => {
