@@ -124,8 +124,17 @@ export function normalizeSeoulRealtime(raw: unknown, stopId: string, observedAt 
   if (error && text(error.code) !== 'INFO-000') throw new ServiceError(text(error.code) === 'INFO-100' ? 'QUOTA_EXCEEDED' : 'UPSTREAM_UNAVAILABLE', text(error.code) === 'INFO-100' ? 429 : 502, `Seoul realtime error ${text(error.code)}`, 'seoul-subway')
   return array(root.realtimeArrivalList).map((item) => {
     const row = record(item, 'seoul-subway'); const seconds = number(row.barvlDt)
-    return { stopId, routeId: `subway:${text(row.subwayId) || text(row.trainLineNm)}`, tripId: text(row.btrainNo) || undefined, expectedAt: new Date(observedAt.getTime() + Math.max(0, seconds) * 1000), observedAt, source: 'seoul-realtime' as const, message: text(row.arvlMsg2) || undefined }
+    const receivedAt = parseSeoulTimestamp(text(row.recptnDt)) ?? observedAt
+    return { stopId, routeId: `subway:${text(row.subwayId) || text(row.trainLineNm)}`, tripId: text(row.btrainNo) || undefined, expectedAt: new Date(receivedAt.getTime() + Math.max(0, seconds) * 1000), observedAt: receivedAt, source: 'seoul-realtime' as const, message: text(row.arvlMsg2) || undefined }
   })
+}
+
+function parseSeoulTimestamp(value: string): Date | undefined {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/)
+  if (!match) return undefined
+  const [, year, month, day, hour, minute, second] = match
+  const date = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}+09:00`)
+  return Number.isNaN(date.getTime()) ? undefined : date
 }
 
 export interface KakaoTransitBoarding { routeId: string; routeName: string; mode: 'bus' | 'subway'; stationName: string }

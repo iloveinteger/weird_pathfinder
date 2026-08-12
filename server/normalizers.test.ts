@@ -29,6 +29,8 @@ describe('provider response normalization', () => {
     const overlay = normalizeSeoulRealtime({ errorMessage: { code: 'INFO-000' }, realtimeArrivalList: [{ subwayId: '1002', btrainNo: '22', barvlDt: '120', arvlMsg2: '2분 후' }] }, '서울역', observedAt)
     expect(overlay[0]).toMatchObject({ stopId: '서울역', source: 'seoul-realtime', tripId: '22' })
     expect(overlay[0].expectedAt.toISOString()).toBe('2026-08-13T00:02:00.000Z')
+    const timestamped = normalizeSeoulRealtime({ errorMessage: { code: 'INFO-000' }, realtimeArrivalList: [{ subwayId: '1002', barvlDt: '60', recptnDt: '2026-08-13 02:00:00' }] }, '서울역', observedAt)
+    expect(timestamped[0]).toMatchObject({ observedAt: new Date('2026-08-12T17:00:00.000Z'), expectedAt: new Date('2026-08-12T17:01:00.000Z') })
     expect(normalizeSeoulRealtime({ errorMessage: { code: 'INFO-200' } }, '서울역', observedAt)).toEqual([])
   })
 
