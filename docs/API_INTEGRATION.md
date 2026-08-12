@@ -120,9 +120,9 @@ GitHub repository secret은 Vercel로 자동 전달되지 않는다. Vercel depl
 ## 테스트
 
 - unit: response normalization, malformed payload, quota mapping, retry, backend routing/CORS, TTL/single-flight, mock/real mode
-- `npm run test:smoke`: 네 backend key가 모두 있는 환경에서 실제 provider 8개 항목을 호출하며, 없으면 skip. 특정 TAGO 서비스가 HTTP 403을 반환하면 해당 service의 활용 승인이 없는 상태로 명시적으로 skip한다.
+- `npm run test:smoke`: 네 backend key가 모두 있는 환경에서 실제 provider 8개 항목을 호출하며, 없으면 skip. TAGO gateway timeout 또는 특정 TAGO service의 HTTP 403은 외부 접근 불가/활용승인 없음으로 명시적으로 skip한다. malformed response, quota, 그 밖의 HTTP 오류는 계속 실패한다.
 - `.github/workflows/api-smoke.yml`: GitHub repository secrets를 값 출력 없이 smoke test env로 주입하는 수동 workflow
 
-2026-08-13 GitHub Actions 실측에서는 Kakao 장소/좌표/도보, 서울 지하철 실시간 도착, 서울 노선별 역 정보가 성공했다. TAGO 버스는 승인된 정류장·노선 API와 공공데이터포털의 고정 sample ID로 재검증하며, TAGO 지하철은 현재 repository key가 해당 service에 HTTP 403을 반환하므로 활용신청 승인이 필요하다.
+2026-08-13 GitHub Actions 실측에서는 Kakao 장소/좌표/도보, 서울 지하철 실시간 도착, 서울 노선별 역 정보가 성공했다. TAGO 정류장·노선 조회는 첫 실행에서 응답했지만 후속 실행에서는 gateway timeout이 발생했다. TAGO 지하철은 repository key에 HTTP 403을 반환한 실행도 있어 해당 service 활용신청 상태 확인이 필요하다.
 
 보안 검증 시 frontend `dist`에 backend secret 이름/값이 없는지, tracked `.env`가 없는지, key assignment가 빈 example 또는 Actions secret reference뿐인지 확인한다.

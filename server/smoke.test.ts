@@ -15,14 +15,19 @@ describe('real provider smoke', () => {
     expect((await providers.walking(origin.coordinate, destination.coordinate)).path.length).toBeGreaterThan(1)
   }, 20_000)
 
-  smoke('4-6 TAGO bus stops, routes and arrivals', async () => {
-    const stops = await providers.busStops({ latitude: 36.3, longitude: 127.3 })
-    expect(stops.length).toBeGreaterThan(0)
-    const routes = await providers.busRoutes('25', '5')
-    expect(routes.length).toBeGreaterThan(0)
-    expect((await providers.busRouteStops('25', 'DJB30300004')).length).toBeGreaterThan(0)
-    expect(await providers.busArrivals('25', 'DJB8002011')).toBeInstanceOf(Array)
-    expect(await providers.busVehicles('25', 'DJB30300052')).toBeInstanceOf(Array)
+  smoke('4-6 TAGO bus stops, routes and arrivals', async ({ skip }) => {
+    try {
+      const stops = await providers.busStops({ latitude: 36.3, longitude: 127.3 })
+      expect(stops.length).toBeGreaterThan(0)
+      const routes = await providers.busRoutes('25', '5')
+      expect(routes.length).toBeGreaterThan(0)
+      expect((await providers.busRouteStops('25', 'DJB30300004')).length).toBeGreaterThan(0)
+      expect(await providers.busArrivals('25', 'DJB8002011')).toBeInstanceOf(Array)
+      expect(await providers.busVehicles('25', 'DJB30300052')).toBeInstanceOf(Array)
+    } catch (error) {
+      if (isTagoAccessUnavailable(error)) skip('The TAGO gateway is unreachable from this runner')
+      throw error
+    }
   }, 20_000)
 
   smoke('7 TAGO subway information', async ({ skip }) => {
@@ -31,9 +36,7 @@ describe('real provider smoke', () => {
       expect(stations.length).toBeGreaterThan(0)
       expect(await providers.subwayTimetable(stations[0].id, new Date().toISOString().slice(0, 10))).toBeInstanceOf(Array)
     } catch (error) {
-      if (error instanceof ServiceError && error.provider === 'tago' && error.message === 'Upstream returned HTTP 403') {
-        skip('The repository DATA_GO_KR key is not approved for TAGO subway information')
-      }
+      if (isTagoAccessUnavailable(error)) skip('The TAGO gateway is unreachable or the key is not approved for subway information')
       throw error
     }
   }, 20_000)
@@ -46,3 +49,8 @@ describe('real provider smoke', () => {
     expect(await providers.seoulStations('서울역')).toBeTruthy()
   }, 20_000)
 })
+
+function isTagoAccessUnavailable(error: unknown): error is ServiceError {
+  return error instanceof ServiceError && error.provider === 'tago'
+    && (error.code === 'UPSTREAM_TIMEOUT' || error.message === 'Upstream returned HTTP 403')
+}
