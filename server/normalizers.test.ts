@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { ServiceError } from './errors'
 import { TimeDependentRouter } from '../src/routing/router'
-import { normalizeKakaoPlaces, normalizeKakaoTransitNetwork, normalizeKakaoWalking, normalizeSeoulRealtime, normalizeTagoArrivals, normalizeTagoStops, normalizeTagoSubwayStations, normalizeTagoSubwayTrips } from './normalizers'
+import { extractKakaoTransitBoardings, normalizeKakaoPlaces, normalizeKakaoTransitNetwork, normalizeKakaoWalking, normalizeSeoulRealtime, normalizeTagoArrivals, normalizeTagoStops, normalizeTagoSubwayStations, normalizeTagoSubwayTrips } from './normalizers'
 
 const tago = (item: unknown, resultCode = '00') => ({ response: { header: { resultCode, resultMsg: 'OK' }, body: { items: { item } } } })
 
@@ -29,6 +29,7 @@ describe('provider response normalization', () => {
     const overlay = normalizeSeoulRealtime({ errorMessage: { code: 'INFO-000' }, realtimeArrivalList: [{ subwayId: '1002', btrainNo: '22', barvlDt: '120', arvlMsg2: '2분 후' }] }, '서울역', observedAt)
     expect(overlay[0]).toMatchObject({ stopId: '서울역', source: 'seoul-realtime', tripId: '22' })
     expect(overlay[0].expectedAt.toISOString()).toBe('2026-08-13T00:02:00.000Z')
+    expect(normalizeSeoulRealtime({ errorMessage: { code: 'INFO-200' } }, '서울역', observedAt)).toEqual([])
   })
 
   it('feeds a normalized real snapshot into the existing routing core', () => {
@@ -39,6 +40,7 @@ describe('provider response normalization', () => {
       step(60, 50, [[127.0, 37.57], [127.001, 37.571]]),
     ] }] }
     const network = normalizeKakaoTransitNetwork(raw, { latitude: 37.55, longitude: 126.97 }, { latitude: 37.571, longitude: 127.001 }, 540, '2026-08-13')
+    expect(extractKakaoTransitBoardings(raw)).toEqual([{ routeId: 'kakao-route:0:1', routeName: '701', mode: 'bus', stationName: '' }])
     const journeys = new TimeDependentRouter(network).findJourneys({ originId: 'origin', destinationId: 'destination', departureTime: 540, mode: 'normal' })
     expect(journeys[0].segments.some((segment) => segment.type === 'transit' && segment.mode === 'bus')).toBe(true)
   })

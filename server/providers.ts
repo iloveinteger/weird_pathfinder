@@ -1,10 +1,13 @@
-import type { Coordinate } from '../src/domain/models.js'
+import type { ArrivalEstimate } from '../src/providers/interfaces.js'
+import type { Coordinate, TransitTrip } from '../src/domain/models.js'
+import type { TransitNetwork } from '../src/routing/network.js'
 import { CACHE_TTL, TtlSingleFlightCache } from './cache.js'
 import { ServiceError } from './errors.js'
 import {
   normalizeKakaoPlaces,
   normalizeKakaoReverse,
   normalizeKakaoTransitNetwork,
+  extractKakaoTransitBoardings,
   normalizeKakaoWalking,
   normalizeSeoulRealtime,
   normalizeTagoArrivals,
@@ -47,9 +50,40 @@ export class UpstreamProviders {
   }
 
   transitNetwork(origin: Coordinate, destination: Coordinate, departureTime: number, serviceDate: string) {
-    return this.cached('network', { origin, destination, departureTime: Math.floor(departureTime / 5), serviceDate }, CACHE_TTL.realtime, async () => normalizeKakaoTransitNetwork(await this.kakao('/v2/routing/publictraffic', {
-      start_x: String(origin.longitude), start_y: String(origin.latitude), end_x: String(destination.longitude), end_y: String(destination.latitude),
-    }), origin, destination, departureTime, serviceDate))
+    return this.cached('network', { origin, destination, departureTime: Math.floor(departureTime / 5), serviceDate }, CACHE_TTL.realtime, async () => {
+      const raw = await this.kakao('/v2/routing/publictraffic', {
+        start_x: String(origin.longitude), start_y: String(origin.latitude), end_x: String(destination.longitude), end_y: String(destination.latitude),
+      })
+      const network = normalizeKakaoTransitNetwork(raw, origin, destination, departureTime, serviceDate)
+      if (!isCurrentSeoulDeparture(serviceDate, departureTime)) return network
+      return this.overlayRealtimeSubway(network, extractKakaoTransitBoardings(raw), departureTime)
+    })
+  }
+
+  private async overlayRealtimeSubway(network: TransitNetwork, boardings: ReturnType<typeof extractKakaoTransitBoardings>, departureTime: number): Promise<TransitNetwork> {
+    const stations = [...new Set(boardings.filter((item) => item.mode === 'subway' && item.stationName).map((item) => item.stationName))]
+    const arrivals = new Map<string, ArrivalEstimate[]>()
+    await Promise.all(stations.map(async (station) => {
+      try { arrivals.set(station, await this.subwayRealtime(station, station)) }
+      catch { arrivals.set(station, []) }
+    }))
+    const nextDeparture = new Map<string, number>()
+    boardings.filter((item) => item.mode === 'subway').forEach((boarding) => {
+      const next = (arrivals.get(boarding.stationName) ?? [])
+        .filter((arrival) => subwayRouteMatches(boarding.routeName, arrival.routeId))
+        .map((arrival) => seoulClockMinutes(arrival.expectedAt, departureTime))
+        .filter((minute) => minute >= departureTime)
+        .sort((a, b) => a - b)[0]
+      if (next !== undefined) nextDeparture.set(boarding.routeId, next)
+    })
+    const trips = network.trips.flatMap((trip) => {
+      const route = network.routes.find((item) => item.id === trip.routeId)
+      if (route?.mode !== 'subway') return [trip]
+      const next = nextDeparture.get(trip.routeId)
+      return next === undefined ? [] : [shiftTrip(trip, next)]
+    })
+    const routeIds = new Set(trips.map((trip) => trip.routeId))
+    return { ...network, routes: network.routes.filter((route) => routeIds.has(route.id)), trips }
   }
 
   busStops(coordinate: Coordinate) {
@@ -128,3 +162,33 @@ function sortValue(value: unknown): unknown {
   return value
 }
 function decodeServiceKey(key: string): string { try { return decodeURIComponent(key) } catch { return key } }
+
+function isCurrentSeoulDeparture(serviceDate: string, departureTime: number, now = new Date()): boolean {
+  const seoul = new Date(now.getTime() + 9 * 60 * 60_000)
+  const today = seoul.toISOString().slice(0, 10); const current = seoul.getUTCHours() * 60 + seoul.getUTCMinutes()
+  return serviceDate === today && Math.abs(departureTime - current) <= 15
+}
+
+function subwayRouteMatches(routeName: string, arrivalRouteId: string): boolean {
+  const normalized = arrivalRouteId.replace(/^subway:/, '')
+  const line = routeName.match(/^(\d+)호선$/)?.[1]
+  if (line) return normalized === `100${line}` || normalized.includes(`${line}호선`)
+  const ids: Record<string, string[]> = {
+    신분당선: ['1077', '신분당선'], 수인분당선: ['1075', '수인분당선'], 경의중앙선: ['1063', '경의중앙선'],
+    공항철도: ['1065', '공항철도'], 경춘선: ['1067', '경춘선'], 우이신설선: ['1092', '우이신설선'], 서해선: ['1093', '서해선'],
+  }
+  return (ids[routeName] ?? [routeName]).some((value) => normalized.includes(value))
+}
+
+function seoulClockMinutes(date: Date, departureTime: number): number {
+  const seoul = new Date(date.getTime() + 9 * 60 * 60_000)
+  let minute = seoul.getUTCHours() * 60 + seoul.getUTCMinutes()
+  if (minute < departureTime - 12 * 60) minute += 24 * 60
+  return minute
+}
+
+function shiftTrip(trip: TransitTrip, departureTime: number): TransitTrip {
+  const firstDeparture = trip.stops[0]?.departureTime ?? departureTime
+  const offset = departureTime - firstDeparture
+  return { ...trip, stops: trip.stops.map((stop) => ({ ...stop, arrivalTime: stop.arrivalTime + offset, departureTime: stop.departureTime + offset })) }
+}

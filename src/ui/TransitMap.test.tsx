@@ -16,6 +16,7 @@ describe('TransitMap provider boundary', () => {
   it('renders markers, route polylines and adjusted bounds through Kakao Maps', async () => {
     const marker = vi.fn()
     const polyline = vi.fn()
+    const customOverlay = vi.fn()
     const setBounds = vi.fn()
     const extend = vi.fn()
     class LatLng { constructor(readonly latitude: number, readonly longitude: number) {} }
@@ -23,9 +24,10 @@ describe('TransitMap provider boundary', () => {
     class Map { setBounds = setBounds }
     class Marker { constructor(options: object) { marker(options) } }
     class Polyline { constructor(options: object) { polyline(options) } }
-    window.kakao = { maps: { load: (callback) => callback(), LatLng, LatLngBounds, Map, Marker, Polyline } }
+    class CustomOverlay { constructor(options: object) { customOverlay(options) } }
+    window.kakao = { maps: { load: (callback) => callback(), LatLng, LatLngBounds, Map, Marker, Polyline, CustomOverlay } }
     const journey = new TimeDependentRouter(mockNetwork).findJourneys({ originId: 'gwanghwamun', destinationId: 'jamsil', departureTime: 540, mode: 'normal' })[0]
-    const mappedJourney = { ...journey, segments: journey.segments.map((segment, index) => index === 0 ? { ...segment, path: [{ latitude: 37.57, longitude: 126.98 }, { latitude: 37.55, longitude: 126.99 }] } : segment) }
+    const mappedJourney = { ...journey, segments: journey.segments.map((segment, index) => ({ ...segment, path: [{ latitude: 37.57 - index * .01, longitude: 126.98 + index * .01 }, { latitude: 37.56 - index * .01, longitude: 126.99 + index * .01 }] })) }
 
     render(<TransitMap mode="real" kakaoJavaScriptKey="public-test-key" journey={mappedJourney}
       origin={{ latitude: 37.57, longitude: 126.98 }}
@@ -35,6 +37,7 @@ describe('TransitMap provider boundary', () => {
     expect(await screen.findByLabelText('카카오 지도')).toBeInTheDocument()
     await waitFor(() => expect(marker).toHaveBeenCalledTimes(3))
     expect(polyline).toHaveBeenCalled()
+    expect(customOverlay).toHaveBeenCalledTimes(journey.transfers.length)
     expect(extend).toHaveBeenCalled()
     expect(setBounds).toHaveBeenCalledOnce()
   })

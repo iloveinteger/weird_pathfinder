@@ -28,6 +28,7 @@ export class RealTransitPlanner implements TransitPlanner {
       if (!origin || !destination) throw new Error('Select origin and destination from place search results')
       const network = await this.providers.network.getNetwork({ origin: origin.coordinate, destination: destination.coordinate, departureTime, serviceDate: localServiceDate() })
       network.points.forEach((point) => this.pointNames.set(point.id, point.name))
+      network.routes.forEach((route) => this.pointNames.set(route.id, route.name))
       const planner = new CoreTransitPlanner(this.providers.place, new TimeDependentRouter(network), network.points)
       const found = await planner.findRoutes({ ...request, originId: 'origin', destinationId: 'destination', departureTime, waypoints: [] })
       if (!found.length) return []

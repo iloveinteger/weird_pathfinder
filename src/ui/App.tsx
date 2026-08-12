@@ -244,7 +244,7 @@ function ActiveTrip({ planner, route, variant, mapMode, kakaoJavaScriptKey, onVa
   const countdown = Math.max(0, upcoming.departureTime * 60 - variant.journey.departureTime * 60 - elapsedSeconds)
   return <main className="app-shell active-shell"><Header mode={mapMode} /><div className="active-workspace"><section className="active-panel">
     <button className="back-button" onClick={onBack}>← 경로 상세</button><span className="live-badge"><i /> ACTIVE TRIP</span>
-    <div className="active-hero"><span>{current?.mode === 'subway' ? '지하철' : '버스'}</span><h1>{current ? transitLabel(current.routeId, current.mode) : '도보 이동'}</h1><p>현재 이용 중인 교통수단</p></div>
+    <div className="active-hero"><span>{current?.mode === 'subway' ? '지하철' : '버스'}</span><h1>{current ? transitLabel(planner.pointName(current.routeId), current.mode) : '도보 이동'}</h1><p>현재 이용 중인 교통수단</p></div>
     <div className="progress-track"><i /><i className="future" /><i className="future" /></div>
     <div className="active-grid"><div><small>현재 단계</small><b>1 / {variant.journey.segments.length}</b></div><div><small>다음 목표</small><b>{upcoming ? `${planner.pointName(upcoming.fromStopId)} 탑승` : '목적지 도착'}</b></div></div>
     <div className="countdown-card"><small>다음 차량 출발까지</small><b aria-label="다음 차량 출발 countdown">{countdownLabel(countdown)}</b><span>{upcoming ? `${formatClock(upcoming.departureTime)} 출발 예정` : '도착 예정'}</span></div>
@@ -293,8 +293,12 @@ function variantPace(variant: TimingVariant): TransferPace {
 function findTransferWalk(variant: TimingVariant) { return variant.journey.segments.find((segment) => segment.type === 'walk' && segment.purpose === 'transfer') as Extract<Journey['segments'][number], { type: 'walk' }> | undefined }
 function transferWalkDuration(variant: TimingVariant): string { const walk = findTransferWalk(variant); return walk ? `${walk.durationMinutes}분 이내` : '바로 환승' }
 function nextTransitClock(variant: TimingVariant): string { const transits = variant.journey.segments.filter((segment) => segment.type === 'transit'); return transits[1] ? formatClock(transits[1].departureTime) : formatClock(transits[0]?.departureTime ?? variant.arrivalTime) }
-function segmentTitle(segment: Journey['segments'][number], planner: TransitPlanner): string { if (segment.type === 'walk') return segment.purpose === 'transfer' ? `${planner.pointName(segment.toStopId)}까지 환승` : `${planner.pointName(segment.toStopId)}까지 도보`; return `${transitLabel(segment.routeId, segment.mode)} · ${planner.pointName(segment.toStopId)} 방면` }
-function transitLabel(routeId: string, mode: 'bus' | 'subway'): string { return mode === 'bus' ? `${routeId.replace('bus-', '')}번 버스` : routeId.replace('subway-', '') === '2' ? '2호선 급행' : routeId }
+function segmentTitle(segment: Journey['segments'][number], planner: TransitPlanner): string { if (segment.type === 'walk') return segment.purpose === 'transfer' ? `${planner.pointName(segment.toStopId)}까지 환승` : `${planner.pointName(segment.toStopId)}까지 도보`; return `${transitLabel(planner.pointName(segment.routeId), segment.mode)} · ${planner.pointName(segment.toStopId)} 방면` }
+function transitLabel(routeName: string, mode: 'bus' | 'subway'): string {
+  const name = routeName.replace(mode === 'bus' ? /^bus-/ : /^subway-/, '')
+  if (mode === 'subway') return /선$/.test(name) ? name : `${name}호선`
+  return /버스|심야/.test(name) ? name : `${name}번 버스`
+}
 function durationLabel(from: number, to: number): string { return `${Math.max(0, to - from)}분` }
 function distanceLabel(meters: number): string { return meters >= 1000 ? `${(meters / 1000).toFixed(1)}km` : `${meters}m` }
 function paceLabel(pace: TransferPace): string { return pace === 'fast' ? 'Fast' : pace === 'standard' ? 'Standard' : 'Relaxed' }

@@ -18,6 +18,7 @@ interface KakaoMaps {
   Map: new (element: HTMLElement, options: object) => KakaoMap
   Marker: new (options: object) => KakaoOverlay
   Polyline: new (options: object) => KakaoOverlay
+  CustomOverlay?: new (options: object) => KakaoOverlay
 }
 
 interface KakaoMap { setBounds(bounds: unknown): void }
@@ -99,13 +100,30 @@ function renderKakaoMap(maps: KakaoMaps, map: KakaoMap, overlays: KakaoOverlay[]
   const segmentPaths = journey?.segments.flatMap((segment) => segment.path?.length ? [{ segment, path: segment.path }] : []) ?? []
   const inferred = segmentPaths.flatMap(({ path }) => [path[0], path.at(-1)!])
   const markers = [origin ?? inferred[0], ...waypoints, destination ?? inferred.at(-1)].filter((item): item is Coordinate => Boolean(item))
+  const transfers = transferCoordinates(journey)
   const bounds = new maps.LatLngBounds()
   markers.forEach((coordinate) => { const position = new maps.LatLng(coordinate.latitude, coordinate.longitude); bounds.extend(position); overlays.push(new maps.Marker({ map, position })) })
+  const CustomOverlay = maps.CustomOverlay
+  if (CustomOverlay) transfers.forEach((coordinate) => {
+    const position = new maps.LatLng(coordinate.latitude, coordinate.longitude); bounds.extend(position)
+    const content = document.createElement('span'); content.className = 'map-transfer-marker'; content.textContent = '환승'
+    overlays.push(new CustomOverlay({ map, position, content, yAnchor: 1.4 }))
+  })
   segmentPaths.forEach(({ segment, path }) => {
     const line = path.map((coordinate) => { const point = new maps.LatLng(coordinate.latitude, coordinate.longitude); bounds.extend(point); return point })
     overlays.push(new maps.Polyline({ map, path: line, strokeWeight: segment.type === 'walk' ? 4 : 6, strokeColor: segment.type === 'walk' ? '#f59e0b' : segment.mode === 'bus' ? '#3471ce' : '#21a368', strokeOpacity: 0.9, strokeStyle: segment.type === 'walk' ? 'shortdash' : 'solid' }))
   })
-  if (markers.length || segmentPaths.length) map.setBounds(bounds)
+  if (markers.length || transfers.length || segmentPaths.length) map.setBounds(bounds)
+}
+
+function transferCoordinates(journey?: Journey): Coordinate[] {
+  if (!journey) return []
+  return journey.transfers.flatMap((transfer) => {
+    const arriving = journey.segments.find((segment) => segment.toStopId === transfer.atStopId && segment.path?.length)
+    const departing = journey.segments.find((segment) => segment.fromStopId === transfer.atStopId && segment.path?.length)
+    const coordinate = arriving?.path?.at(-1) ?? departing?.path?.[0]
+    return coordinate ? [coordinate] : []
+  })
 }
 
 function mapViewSignature(journey?: Journey, origin?: Coordinate, destination?: Coordinate, waypoints: Coordinate[] = []): string {

@@ -120,11 +120,33 @@ export interface RealtimeArrivalOverlay extends ArrivalEstimate { observedAt: Da
 
 export function normalizeSeoulRealtime(raw: unknown, stopId: string, observedAt = new Date()): RealtimeArrivalOverlay[] {
   const root = record(raw, 'seoul-subway'); const error = isRecord(root.errorMessage) ? root.errorMessage : undefined
+  if (error && text(error.code) === 'INFO-200') return []
   if (error && text(error.code) !== 'INFO-000') throw new ServiceError(text(error.code) === 'INFO-100' ? 'QUOTA_EXCEEDED' : 'UPSTREAM_UNAVAILABLE', text(error.code) === 'INFO-100' ? 429 : 502, `Seoul realtime error ${text(error.code)}`, 'seoul-subway')
   return array(root.realtimeArrivalList).map((item) => {
     const row = record(item, 'seoul-subway'); const seconds = number(row.barvlDt)
     return { stopId, routeId: `subway:${text(row.subwayId) || text(row.trainLineNm)}`, tripId: text(row.btrainNo) || undefined, expectedAt: new Date(observedAt.getTime() + Math.max(0, seconds) * 1000), observedAt, source: 'seoul-realtime' as const, message: text(row.arvlMsg2) || undefined }
   })
+}
+
+export interface KakaoTransitBoarding { routeId: string; routeName: string; mode: 'bus' | 'subway'; stationName: string }
+
+export function extractKakaoTransitBoardings(raw: unknown): KakaoTransitBoarding[] {
+  const root = record(raw, 'kakao'); const boardings: KakaoTransitBoarding[] = []
+  array(root.routes).forEach((candidate, candidateIndex) => {
+    array(record(candidate, 'kakao').steps).forEach((stepValue, stepIndex) => {
+      const props = record(record(stepValue, 'kakao').properties, 'kakao'); const vehicles = array(props.vehicles).map((value) => record(value, 'kakao'))
+      const mode = kakaoTransitMode(props, vehicles)
+      if (!mode) return
+      const firstStop = array(props.stops)[0]
+      boardings.push({
+        routeId: `kakao-route:${candidateIndex}:${stepIndex}`,
+        routeName: text(vehicles[0]?.name) || text(props.guidance) || `kakao-route:${candidateIndex}:${stepIndex}`,
+        mode,
+        stationName: firstStop ? text(record(firstStop, 'kakao').name) : '',
+      })
+    })
+  })
+  return boardings
 }
 
 /** Bootstrap network from Kakao transit candidates; all data is normalized before core use. */
@@ -142,8 +164,7 @@ export function normalizeKakaoTransitNetwork(raw: unknown, origin: Coordinate, d
       const fromId = previous; const toId = stepIndex === steps.length - 1 ? 'destination' : `kakao:${candidateIndex}:${stepIndex}:to`
       const stops = array(props.stops); const lastStop = stops[stops.length - 1]; const lastPathPoint = path[path.length - 1]
       if (toId !== 'destination' && !points.some((point) => point.id === toId)) points.push(placePoint(toId, text(lastStop && record(lastStop, 'kakao').name) || `환승 ${stepIndex + 1}`, lastPathPoint))
-      const modeValue = text(vehicles[0]?.type).toUpperCase(); const propertyType = text(props.type).toUpperCase()
-      const transitMode = modeValue.includes('SUBWAY') || propertyType.includes('SUBWAY') ? 'subway' : modeValue || vehicles.length || propertyType.includes('BUS') ? 'bus' : undefined
+      const transitMode = kakaoTransitMode(props, vehicles)
       if (!transitMode) walkingLinks.push({ fromStopId: fromId, toStopId: toId, distanceMeters: distance, durationMinutes: duration, purpose: stepIndex === 0 ? 'access' : stepIndex === steps.length - 1 ? 'egress' : 'transfer', path })
       else {
         const routeId = `kakao-route:${candidateIndex}:${stepIndex}`; const routeName = text(vehicles[0]?.name) || text(props.guidance) || routeId
@@ -155,6 +176,11 @@ export function normalizeKakaoTransitNetwork(raw: unknown, origin: Coordinate, d
     if (previous !== 'destination') walkingLinks.push({ fromStopId: previous, toStopId: 'destination', distanceMeters: 0, durationMinutes: 1, purpose: 'egress' })
   })
   return { points: uniqueById(points), routes, trips, walkingLinks }
+}
+
+function kakaoTransitMode(props: Record<string, unknown>, vehicles: Array<Record<string, unknown>>): 'bus' | 'subway' | undefined {
+  const modeValue = text(vehicles[0]?.type).toUpperCase(); const propertyType = text(props.type).toUpperCase()
+  return modeValue.includes('SUBWAY') || propertyType.includes('SUBWAY') ? 'subway' : modeValue || vehicles.length || propertyType.includes('BUS') ? 'bus' : undefined
 }
 
 const placePoint = (id: string, name: string, coordinate: Coordinate): TransitPoint => ({ id, kind: 'place', name, coordinate })

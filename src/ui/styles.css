@@ -86,4 +86,5 @@ h1 { margin: 7px 0 0; font-size: 27px; letter-spacing: -.05em; }
 .kakao-map-shell { background: #e5eae3; }
 .kakao-map-canvas { position: absolute; inset: 0; }
 .kakao-map-shell .map-label { pointer-events: none; }
+.map-transfer-marker { display: block; padding: 5px 8px; border: 2px solid #fff; border-radius: 14px; color: #fff; background: #e04f2f; box-shadow: 0 3px 10px #17211d40; font-size: 10px; font-weight: 800; white-space: nowrap; }
 @media (max-width: 390px) { .mode-grid { grid-template-columns: 1fr; }.waypoint-timing { grid-template-columns: 1fr 1fr; }.waypoint-timing > span { grid-column: 1 / -1; }.timing-branches > button { grid-template-columns: 62px 1fr; }.timing-branches > button > small { grid-column: 2; }.mock-badge { display: none; } }
