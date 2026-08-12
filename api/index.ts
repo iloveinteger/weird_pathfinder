@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { createBackend } from '../server/app'
+import { createBackend } from '../server/app.js'
 
 const backend = createBackend(process.env)
 

@@ -1,5 +1,5 @@
-import { ServiceError, safeErrorBody } from './errors'
-import { UpstreamProviders, type ServerEnvironment } from './providers'
+import { ServiceError, safeErrorBody } from './errors.js'
+import { UpstreamProviders, type ServerEnvironment } from './providers.js'
 
 export interface BackendRequest { method: string; url: string; headers?: HeadersInit }
 export interface BackendResponse { status: number; headers: Record<string, string>; body: unknown }

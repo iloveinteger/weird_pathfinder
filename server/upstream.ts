@@ -1,4 +1,4 @@
-import { ServiceError } from './errors'
+import { ServiceError } from './errors.js'
 
 export type FetchLike = typeof fetch
 

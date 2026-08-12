@@ -8,7 +8,7 @@ import type {
   TransitTrip,
   TripId,
 } from '../domain/models'
-import type { TransitNetwork } from '../routing/network'
+import type { TransitNetwork } from '../routing/network.js'
 
 export interface WalkingRoute {
   distanceMeters: number

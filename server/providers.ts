@@ -1,6 +1,6 @@
-import type { Coordinate } from '../src/domain/models'
-import { CACHE_TTL, TtlSingleFlightCache } from './cache'
-import { ServiceError } from './errors'
+import type { Coordinate } from '../src/domain/models.js'
+import { CACHE_TTL, TtlSingleFlightCache } from './cache.js'
+import { ServiceError } from './errors.js'
 import {
   normalizeKakaoPlaces,
   normalizeKakaoReverse,
@@ -14,8 +14,8 @@ import {
   normalizeTagoSubwayStations,
   normalizeTagoSubwayTrips,
   normalizeTagoVehicles,
-} from './normalizers'
-import { fetchJson, type FetchLike } from './upstream'
+} from './normalizers.js'
+import { fetchJson, type FetchLike } from './upstream.js'
 
 export interface ServerEnvironment {
   KAKAO_REST_API_KEY?: string

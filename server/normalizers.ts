@@ -1,7 +1,7 @@
-import type { ArrivalEstimate, VehiclePosition, WalkingRoute } from '../src/providers/interfaces'
-import type { Coordinate, PlaceSearchResult, TransitPoint, TransitRoute, TransitTrip } from '../src/domain/models'
-import type { TransitNetwork, WalkingLink } from '../src/routing/network'
-import { ServiceError } from './errors'
+import type { ArrivalEstimate, VehiclePosition, WalkingRoute } from '../src/providers/interfaces.js'
+import type { Coordinate, PlaceSearchResult, TransitPoint, TransitRoute, TransitTrip } from '../src/domain/models.js'
+import type { TransitNetwork, WalkingLink } from '../src/routing/network.js'
+import { ServiceError } from './errors.js'
 
 type RecordValue = Record<string, unknown>
 const isRecord = (value: unknown): value is RecordValue => typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -140,7 +140,8 @@ export function normalizeKakaoTransitNetwork(raw: unknown, origin: Coordinate, d
       if (path.length < 2) return
       const duration = Math.max(1, Math.ceil(number(props.time) / 60)); const distance = Math.max(0, number(props.distance)); const vehicles = array(props.vehicles).map((v) => record(v, 'kakao'))
       const fromId = previous; const toId = stepIndex === steps.length - 1 ? 'destination' : `kakao:${candidateIndex}:${stepIndex}:to`
-      if (toId !== 'destination' && !points.some((point) => point.id === toId)) points.push(placePoint(toId, text(array(props.stops).at(-1) && record(array(props.stops).at(-1), 'kakao').name) || `환승 ${stepIndex + 1}`, path.at(-1)!))
+      const stops = array(props.stops); const lastStop = stops[stops.length - 1]; const lastPathPoint = path[path.length - 1]
+      if (toId !== 'destination' && !points.some((point) => point.id === toId)) points.push(placePoint(toId, text(lastStop && record(lastStop, 'kakao').name) || `환승 ${stepIndex + 1}`, lastPathPoint))
       const modeValue = text(vehicles[0]?.type).toUpperCase(); const propertyType = text(props.type).toUpperCase()
       const transitMode = modeValue.includes('SUBWAY') || propertyType.includes('SUBWAY') ? 'subway' : modeValue || vehicles.length || propertyType.includes('BUS') ? 'bus' : undefined
       if (!transitMode) walkingLinks.push({ fromStopId: fromId, toStopId: toId, distanceMeters: distance, durationMinutes: duration, purpose: stepIndex === 0 ? 'access' : stepIndex === steps.length - 1 ? 'egress' : 'transfer', path })

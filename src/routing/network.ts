@@ -1,4 +1,4 @@
-import type { Coordinate, StopId, TransitPoint, TransitRoute, TransitTrip } from '../domain/models'
+import type { Coordinate, StopId, TransitPoint, TransitRoute, TransitTrip } from '../domain/models.js'
 
 export interface WalkingLink {
   fromStopId: StopId
