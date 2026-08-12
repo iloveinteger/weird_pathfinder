@@ -73,17 +73,17 @@ export class UpstreamProviders {
   }
 
   subwayStations(query: string) {
-    return this.cached('subway-stations', { query }, CACHE_TTL.staticTransit, async () => normalizeTagoSubwayStations(await this.tago('/1613000/SubwayInfo/getKwrdFndSubwaySttnList', { subwayStationName: query, numOfRows: '100' })))
+    return this.cached('subway-stations', { query }, CACHE_TTL.staticTransit, async () => normalizeTagoSubwayStations(await this.tago('/1613000/SubwayInfo/GetKwrdFndSubwaySttnList', { subwayStationName: query, numOfRows: '100' })))
   }
 
   subwayTimetable(stationId: string, serviceDate: string, dayType = '01', direction = 'U') {
-    return this.cached('subway-timetable', { stationId, serviceDate, dayType, direction }, CACHE_TTL.staticTransit, async () => normalizeTagoSubwayTrips(await this.tago('/1613000/SubwayInfo/getSubwaySttnAcctoSchdulList', { subwayStationId: stationId, dailyTypeCode: dayType, upDownTypeCode: direction, numOfRows: '500' }), serviceDate))
+    return this.cached('subway-timetable', { stationId, serviceDate, dayType, direction }, CACHE_TTL.staticTransit, async () => normalizeTagoSubwayTrips(await this.tago('/1613000/SubwayInfo/GetSubwaySttnAcctoSchdulList', { subwayStationId: stationId, dailyTypeCode: dayType, upDownTypeCode: direction, numOfRows: '500' }), serviceDate))
   }
 
   subwayRealtime(stationName: string, stationId = stationName) {
     return this.cached('subway-realtime', { stationName }, CACHE_TTL.realtime, async () => {
       const key = this.required('SEOUL_SUBWAY_REALTIME_API_KEY')
-      const url = `https://swopenapi.seoul.go.kr/api/subway/${encodeURIComponent(key)}/json/realtimeStationArrival/0/20/${encodeURIComponent(stationName)}`
+      const url = `http://swopenapi.seoul.go.kr/api/subway/${encodeURIComponent(key)}/json/realtimeStationArrival/0/20/${encodeURIComponent(stationName)}`
       return normalizeSeoulRealtime(await fetchJson(url, {}, { provider: 'seoul-subway', fetcher: this.fetcher }), stationId)
     })
   }
@@ -92,7 +92,7 @@ export class UpstreamProviders {
     return this.cached('seoul-stations', { stationName }, CACHE_TTL.staticTransit, async () => {
       const key = this.required('SEOUL_OPEN_API_KEY')
       const suffix = stationName ? `//${encodeURIComponent(stationName)}` : ''
-      const url = `https://openapi.seoul.go.kr:8088/${encodeURIComponent(key)}/json/SearchSTNBySubwayLineInfo/1/1000${suffix}`
+      const url = `http://openapi.seoul.go.kr:8088/${encodeURIComponent(key)}/json/SearchSTNBySubwayLineInfo/1/1000${suffix}`
       return fetchJson(url, {}, { provider: 'seoul-open', fetcher: this.fetcher })
     })
   }

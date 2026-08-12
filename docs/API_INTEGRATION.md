@@ -113,6 +113,7 @@ GitHub repository secret은 Vercel로 자동 전달되지 않는다. Vercel depl
 - provider별 활용신청은 service 단위일 수 있다. 같은 공공데이터 key가 있어도 미승인 API는 접근 거부될 수 있다.
 - TAGO 도시코드와 지역별 데이터 품질이 다르다. frontend bus adapter의 현재 기본 도시코드는 서울 `11`이다.
 - 서울 실시간 정보는 서울권 및 제공 노선 범위에 한정된다.
+- 서울 Open API와 지하철 실시간 API의 공식 endpoint는 현재 HTTP URL을 게시한다. backend에서만 호출하지만 upstream 구간 TLS가 보장되지 않는 제약이 있어 운영 전 서울시의 HTTPS 지원 여부를 다시 확인해야 한다.
 - Kakao Maps 허용 도메인에 localhost, GitHub Pages domain을 등록해야 실제 지도가 표시된다. 실패하거나 key가 없으면 mock map으로 fallback한다.
 - serverless instance 간 shared cache, realtime overlay의 정적 trip 자동 matching, 전국 service calendar/공휴일 graph는 아직 미지원이다.
 

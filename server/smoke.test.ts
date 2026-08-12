@@ -15,13 +15,13 @@ describe('real provider smoke', () => {
   }, 20_000)
 
   smoke('4-6 TAGO bus stops, routes and arrivals', async () => {
-    const stops = await providers.busStops({ latitude: 37.555, longitude: 126.972 })
+    const stops = await providers.busStops({ latitude: 36.3, longitude: 127.3 })
     expect(stops.length).toBeGreaterThan(0)
-    const routes = await providers.busRoutes('11', '701')
+    const routes = await providers.busRoutes('25', '5')
     expect(routes.length).toBeGreaterThan(0)
-    expect((await providers.busRouteStops('11', routes[0].id)).length).toBeGreaterThan(0)
-    expect(await providers.busArrivals('11', stops[0].id)).toBeInstanceOf(Array)
-    expect(await providers.busVehicles('11', routes[0].id)).toBeInstanceOf(Array)
+    expect((await providers.busRouteStops('25', routes[0].id)).length).toBeGreaterThan(0)
+    expect(await providers.busArrivals('25', stops[0].id)).toBeInstanceOf(Array)
+    expect(await providers.busVehicles('25', routes[0].id)).toBeInstanceOf(Array)
   }, 20_000)
 
   smoke('7 TAGO subway information', async () => {
