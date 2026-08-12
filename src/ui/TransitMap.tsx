@@ -23,7 +23,8 @@ interface KakaoMaps {
 declare global { interface Window { kakao?: { maps: KakaoMaps } } }
 
 export function TransitMap(props: TransitMapProps) {
-  if (props.mode !== 'real' || !props.kakaoJavaScriptKey) return <MockTransitMap journey={props.journey} active={props.active} />
+  if (props.mode !== 'real') return <MockTransitMap journey={props.journey} active={props.active} />
+  if (!props.kakaoJavaScriptKey) return <RealMapUnavailable active={props.active} reason="Kakao Maps 공개 키가 설정되지 않았습니다" />
   return <KakaoTransitMap {...props} kakaoJavaScriptKey={props.kakaoJavaScriptKey} />
 }
 
@@ -40,8 +41,15 @@ function KakaoTransitMap({ journey, active = false, kakaoJavaScriptKey, origin, 
     return () => { cancelled = true }
   }, [journey, kakaoJavaScriptKey, origin, destination, waypoints])
 
-  if (failed) return <MockTransitMap journey={journey} active={active} />
+  if (failed) return <RealMapUnavailable active={active} reason="Kakao Maps SDK를 불러오지 못했습니다" />
   return <section className={`map-placeholder kakao-map-shell ${active ? 'active' : ''}`} aria-label="카카오 지도"><div ref={elementRef} className="kakao-map-canvas" /><div className="map-label">KAKAO MAPS <small>REAL PROVIDER</small></div></section>
+}
+
+function RealMapUnavailable({ active = false, reason }: { active?: boolean; reason: string }) {
+  return <section className={`map-placeholder real-map-unavailable ${active ? 'active' : ''}`} aria-label="실제 지도 사용 불가">
+    <div className="map-label">KAKAO MAPS <small>PROVIDER UNAVAILABLE</small></div>
+    <div className="map-caption"><b>실제 지도를 표시할 수 없습니다</b><span>{reason}</span></div>
+  </section>
 }
 
 let sdkPromise: Promise<KakaoMaps> | undefined

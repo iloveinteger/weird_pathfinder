@@ -114,15 +114,31 @@ GitHub repository secret은 Vercel로 자동 전달되지 않는다. Vercel depl
 - TAGO 도시코드와 지역별 데이터 품질이 다르다. frontend bus adapter의 현재 기본 도시코드는 서울 `11`이다.
 - 서울 실시간 정보는 서울권 및 제공 노선 범위에 한정된다.
 - 서울 Open API와 지하철 실시간 API의 공식 endpoint는 현재 HTTP URL을 게시한다. backend에서만 호출하지만 upstream 구간 TLS가 보장되지 않는 제약이 있어 운영 전 서울시의 HTTPS 지원 여부를 다시 확인해야 한다.
-- Kakao Maps 허용 도메인에 localhost, GitHub Pages domain을 등록해야 실제 지도가 표시된다. 실패하거나 key가 없으면 mock map으로 fallback한다.
+- Kakao Maps 허용 도메인에 localhost, GitHub Pages domain을 등록해야 실제 지도가 표시된다. real mode에서 SDK/key가 없으면 mock 지도로 fallback하지 않고 provider unavailable 상태를 표시한다.
 - serverless instance 간 shared cache, realtime overlay의 정적 trip 자동 matching, 전국 service calendar/공휴일 graph는 아직 미지원이다.
 
 ## 테스트
 
 - unit: response normalization, malformed payload, quota mapping, retry, backend routing/CORS, TTL/single-flight, mock/real mode
-- `npm run test:smoke`: 네 backend key가 모두 있는 환경에서 실제 provider 8개 항목을 호출하며, 없으면 skip. TAGO gateway timeout 또는 특정 TAGO service의 HTTP 403은 외부 접근 불가/활용승인 없음으로 명시적으로 skip한다. malformed response, quota, 그 밖의 HTTP 오류는 계속 실패한다.
+- `npm run test:smoke`: 네 backend key가 모두 있는 환경에서 실제 provider 및 서울역→강남역 direct/waypoint/Hard pipeline을 호출하며, 없으면 skip. TAGO gateway timeout 또는 특정 TAGO service의 HTTP 403은 외부 접근 불가/활용승인 없음으로 명시적으로 skip한다. malformed response, quota, 그 밖의 HTTP 오류는 계속 실패한다.
 - `.github/workflows/api-smoke.yml`: GitHub repository secrets를 값 출력 없이 smoke test env로 주입하는 수동 workflow
 
-2026-08-13 최종 GitHub Actions 실측에서는 Kakao 장소/좌표/도보, TAGO 버스 정류장/노선/도착, 서울 지하철 실시간 도착, 서울 노선별 역 정보가 성공했다. TAGO gateway의 일시적인 timeout도 한 차례 관찰되었으며 제한된 retry 뒤 구조화된 timeout으로 처리된다. TAGO 지하철은 repository key에 HTTP 403을 반환해 skip되므로 해당 service 활용신청 상태 확인이 필요하다.
+2026-08-13 TAGO 지하철 활용신청 후 HTTP 403은 해소되었다. 실제 응답 field가 camelCase(`subwayStationId`, `subwayRouteName`, `arrTime`, `depTime`)이고 역 검색어가 `서울역`이어야 한다는 점을 adapter에 반영했으며, GitHub Actions에서 역 정보·노선 정보·역별 시간표가 모두 성공했다. TAGO gateway는 간헐적으로 timeout을 반환하므로 제한된 retry 뒤 구조화된 timeout으로 처리한다.
+
+real mode의 최초 출발시각과 `지금 출발`은 브라우저의 현재 로컬 시각을 사용한다. 사용자가 time input을 변경하면 해당 지정 시각이 network와 Normal/Hard routing input에 그대로 전달된다. real mode는 API나 지도 실패 시 mock 데이터를 표시하지 않는다.
+
+Vercel 배포 자격증명이 repository에 없는 경우 다음 순서로 배포한다.
+
+```bash
+npx vercel link
+npx vercel env add KAKAO_REST_API_KEY production
+npx vercel env add DATA_GO_KR_SERVICE_KEY production
+npx vercel env add SEOUL_OPEN_API_KEY production
+npx vercel env add SEOUL_SUBWAY_REALTIME_API_KEY production
+npx vercel env add ALLOWED_ORIGIN production
+npx vercel deploy --prod
+```
+
+그 후 GitHub repository variables `API_BASE_URL=https://<vercel-project>/api`, `PROVIDER_MODE=real`을 설정하고 Pages workflow를 재실행한다. CI 자동 backend 배포를 원하면 `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`도 repository secrets에 추가해야 한다.
 
 보안 검증 시 frontend `dist`에 backend secret 이름/값이 없는지, tracked `.env`가 없는지, key assignment가 빈 example 또는 Actions secret reference뿐인지 확인한다.

@@ -28,7 +28,7 @@ export function App({ planner, mapMode = 'mock', kakaoJavaScriptKey }: AppProps)
   const [origin, setOrigin] = useState<PlaceSearchResult>()
   const [destination, setDestination] = useState<PlaceSearchResult>()
   const [waypoints, setWaypoints] = useState<EditableWaypoint[]>([])
-  const [departureClock, setDepartureClock] = useState('09:00')
+  const [departureClock, setDepartureClock] = useState(() => mapMode === 'real' ? currentClock() : '09:00')
   const [mode, setMode] = useState<PlannerMode>('hard')
   const [routes, setRoutes] = useState<PlannedRoute[]>([])
   const [selectedRoute, setSelectedRoute] = useState<PlannedRoute>()
@@ -96,15 +96,16 @@ export function App({ planner, mapMode = 'mock', kakaoJavaScriptKey }: AppProps)
           <section className="planner-panel" aria-label="경로 검색">
             <div className="panel-heading">
               <div><span className="kicker">ROUTE PLANNER</span><h1>어디로 갈까요?</h1></div>
-              <button className="now-button" onClick={() => setDepartureClock('09:00')}>지금 출발</button>
+              <button className="now-button" onClick={() => setDepartureClock(currentClock())}>지금 출발</button>
             </div>
             <div className="place-stack">
-              <PlaceField label="출발" ariaLabel="출발지" marker="origin" value={origin} planner={planner} onSelect={setOrigin} />
+              <PlaceField label="출발" ariaLabel="출발지" marker="origin" value={origin} planner={planner} onSelect={setOrigin} onFailure={(error) => setStatus(providerFailureMessage(error))} />
               {waypoints.map((waypoint, index) => <WaypointField key={waypoint.id} waypoint={waypoint} index={index} planner={planner}
                 onChange={(next) => setWaypoints((items) => items.map((item) => item.id === next.id ? next : item))}
                 onRemove={() => setWaypoints((items) => items.filter((item) => item.id !== waypoint.id))}
-                onMove={(direction) => setWaypoints((items) => moveItem(items, index, index + direction))} />)}
-              <PlaceField label="도착" ariaLabel="도착지" marker="destination" value={destination} planner={planner} onSelect={setDestination} />
+                onMove={(direction) => setWaypoints((items) => moveItem(items, index, index + direction))}
+                onFailure={(error) => setStatus(providerFailureMessage(error))} />)}
+              <PlaceField label="도착" ariaLabel="도착지" marker="destination" value={destination} planner={planner} onSelect={setDestination} onFailure={(error) => setStatus(providerFailureMessage(error))} />
             </div>
             <button className="add-waypoint" onClick={() => setWaypoints((items) => [...items, newWaypoint(items.length, parseClock(departureClock))])}>＋ 경유지 추가</button>
             <div className="time-row"><label>출발 시간<input aria-label="출발 시간" type="time" value={departureClock} onChange={(event) => setDepartureClock(event.target.value)} /></label></div>
@@ -130,20 +131,20 @@ function Header({ mode = 'mock' }: { mode?: 'mock' | 'real' }) {
   return <header className="topbar"><a className="brand" href="#">샛길 <span>WEIRD PATHFINDER</span></a><span className="mock-badge">{mode === 'real' ? 'REAL PROVIDERS' : 'MOCK NETWORK · 2026.08.12'}</span></header>
 }
 
-function PlaceField({ label, ariaLabel, marker, value, planner, onSelect }: { label: string; ariaLabel: string; marker: string; value?: PlaceSearchResult; planner: TransitPlanner; onSelect: (place: PlaceSearchResult | undefined) => void }) {
+function PlaceField({ label, ariaLabel, marker, value, planner, onSelect, onFailure }: { label: string; ariaLabel: string; marker: string; value?: PlaceSearchResult; planner: TransitPlanner; onSelect: (place: PlaceSearchResult | undefined) => void; onFailure: (error: unknown) => void }) {
   const [query, setQuery] = useState(value?.name ?? '')
   const [suggestions, setSuggestions] = useState<PlaceSearchResult[]>([])
   useEffect(() => { if (value) setQuery(value.name) }, [value])
-  const loadSuggestions = (next: string) => { void planner.searchPlaces(next).then(setSuggestions).catch(() => setSuggestions([])) }
+  const loadSuggestions = (next: string) => { void planner.searchPlaces(next).then(setSuggestions).catch((error: unknown) => { setSuggestions([]); onFailure(error) }) }
   const search = (next: string) => { setQuery(next); onSelect(undefined); loadSuggestions(next) }
   return <label className="place-field"><span className={`place-dot ${marker}`} /><small>{label}</small><input aria-label={ariaLabel} value={query} onFocus={() => loadSuggestions(query)} onChange={(event) => search(event.target.value)} autoComplete="off" />
     {suggestions.length > 0 && <span className="suggestions">{suggestions.map((place) => <button type="button" key={place.id} onClick={() => { onSelect(place); setQuery(place.name); setSuggestions([]) }}><b>{place.name}</b><small>{place.address}</small></button>)}</span>}
   </label>
 }
 
-function WaypointField({ waypoint, index, planner, onChange, onRemove, onMove }: { waypoint: EditableWaypoint; index: number; planner: TransitPlanner; onChange: (waypoint: EditableWaypoint) => void; onRemove: () => void; onMove: (direction: -1 | 1) => void }) {
+function WaypointField({ waypoint, index, planner, onChange, onRemove, onMove, onFailure }: { waypoint: EditableWaypoint; index: number; planner: TransitPlanner; onChange: (waypoint: EditableWaypoint) => void; onRemove: () => void; onMove: (direction: -1 | 1) => void; onFailure: (error: unknown) => void }) {
   const [suggestions, setSuggestions] = useState<PlaceSearchResult[]>([])
-  const loadSuggestions = (query: string) => { void planner.searchPlaces(query).then(setSuggestions).catch(() => setSuggestions([])) }
+  const loadSuggestions = (query: string) => { void planner.searchPlaces(query).then(setSuggestions).catch((error: unknown) => { setSuggestions([]); onFailure(error) }) }
   const search = (query: string) => { onChange({ ...waypoint, query, place: undefined }); loadSuggestions(query) }
   const setDwell = (dwellMinutes: number) => onChange({ ...waypoint, ...resolveWaypointTiming({ arrivalTime: waypoint.arrivalTime, dwellMinutes: Math.max(0, dwellMinutes) }) })
   const setDeparture = (departureTime: number) => {
@@ -252,4 +253,20 @@ function durationLabel(from: number, to: number): string { return `${Math.max(0,
 function distanceLabel(meters: number): string { return meters >= 1000 ? `${(meters / 1000).toFixed(1)}km` : `${meters}m` }
 function paceLabel(pace: TransferPace): string { return pace === 'fast' ? 'Fast' : pace === 'standard' ? 'Standard' : 'Relaxed' }
 function countdownLabel(seconds: number): string { const minutes = Math.floor(seconds / 60); const rest = seconds % 60; return `${minutes}분 ${String(rest).padStart(2, '0')}초` }
-function providerFailureMessage(error: unknown): string { return error instanceof Error ? error.message : 'Provider unavailable' }
+function currentClock(now = new Date()): string {
+  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+}
+
+function providerFailureMessage(error: unknown): string {
+  if (!(error instanceof Error)) return '실데이터 provider를 사용할 수 없습니다'
+  const messages: Record<string, string> = {
+    PROVIDER_UNAVAILABLE: '실데이터 provider를 사용할 수 없습니다',
+    NOT_CONFIGURED: '실데이터 provider 설정이 완료되지 않았습니다',
+    QUOTA_EXCEEDED: '외부 API 호출 한도를 초과했습니다',
+    UNSUPPORTED_REGION: '현재 지역은 실데이터 제공 범위가 아닙니다',
+    UPSTREAM_TIMEOUT: '외부 API 응답 시간이 초과되었습니다',
+    UPSTREAM_UNAVAILABLE: '외부 API가 현재 응답하지 않습니다',
+    MALFORMED_UPSTREAM: '외부 API 응답 형식이 올바르지 않습니다',
+  }
+  return messages[error.name] ?? error.message
+}

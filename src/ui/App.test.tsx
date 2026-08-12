@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CoreTransitPlanner } from '../application/transitPlanner'
 import { mockNetwork } from '../mock/network'
 import { MockPlaceProvider } from '../mock/providers'
@@ -24,6 +24,20 @@ async function searchHardRoute() {
 }
 
 describe('App planner', () => {
+  afterEach(() => vi.useRealTimers())
+
+  it('uses the current local time for real mode and refreshes it for now departure', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 7, 13, 14, 27))
+    render(<App planner={createPlanner()} mapMode="real" />)
+    const departure = screen.getByLabelText('출발 시간')
+    expect(departure).toHaveValue('14:27')
+    fireEvent.change(departure, { target: { value: '10:00' } })
+    vi.setSystemTime(new Date(2026, 7, 13, 14, 29))
+    fireEvent.click(screen.getByRole('button', { name: '지금 출발' }))
+    expect(departure).toHaveValue('14:29')
+  })
+
   it('selects places through the injected mock provider', async () => {
     await renderReadyApp()
     const origin = screen.getByLabelText('출발지')
