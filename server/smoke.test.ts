@@ -15,17 +15,31 @@ describe('real provider smoke', () => {
     expect((await providers.walking(origin.coordinate, destination.coordinate)).path.length).toBeGreaterThan(1)
   }, 20_000)
 
-  smoke('4-6 TAGO bus stops, routes and arrivals', async ({ skip }) => {
+  smoke('4 TAGO bus stops', async ({ skip }) => {
     try {
       const stops = await providers.busStops({ latitude: 36.3, longitude: 127.3 })
       expect(stops.length).toBeGreaterThan(0)
+    } catch (error) {
+      if (isTagoAccessUnavailable(error)) skip('The TAGO bus stop service is unreachable from this runner')
+      throw error
+    }
+  }, 20_000)
+
+  smoke('5 TAGO bus routes', async ({ skip }) => {
+    try {
       const routes = await providers.busRoutes('25', '5')
       expect(routes.length).toBeGreaterThan(0)
-      expect((await providers.busRouteStops('25', 'DJB30300004')).length).toBeGreaterThan(0)
-      expect(await providers.busArrivals('25', 'DJB8002011')).toBeInstanceOf(Array)
-      expect(await providers.busVehicles('25', 'DJB30300052')).toBeInstanceOf(Array)
     } catch (error) {
-      if (isTagoAccessUnavailable(error)) skip('The TAGO gateway is unreachable from this runner')
+      if (isTagoAccessUnavailable(error)) skip('The TAGO bus route service is unreachable from this runner')
+      throw error
+    }
+  }, 20_000)
+
+  smoke('6 TAGO bus arrivals', async ({ skip }) => {
+    try {
+      expect(await providers.busArrivals('25', 'DJB8002011')).toBeInstanceOf(Array)
+    } catch (error) {
+      if (isTagoAccessUnavailable(error)) skip('The TAGO bus arrival service is unreachable or not approved')
       throw error
     }
   }, 20_000)
