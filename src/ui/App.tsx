@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { Journey, PlaceSearchResult, TransferPace } from '../domain/models'
 import { formatClock, parseClock } from '../domain/time'
 import { resolveWaypointTiming } from '../waypoints/plan'
@@ -133,31 +133,77 @@ function Header({ mode = 'mock' }: { mode?: 'mock' | 'real' }) {
 
 function PlaceField({ label, ariaLabel, marker, value, planner, onSelect, onFailure }: { label: string; ariaLabel: string; marker: string; value?: PlaceSearchResult; planner: TransitPlanner; onSelect: (place: PlaceSearchResult | undefined) => void; onFailure: (error: unknown) => void }) {
   const [query, setQuery] = useState(value?.name ?? '')
-  const [suggestions, setSuggestions] = useState<PlaceSearchResult[]>([])
+  const search = usePlaceSuggestions(planner, onFailure)
   useEffect(() => { if (value) setQuery(value.name) }, [value])
-  const loadSuggestions = (next: string) => { void planner.searchPlaces(next).then(setSuggestions).catch((error: unknown) => { setSuggestions([]); onFailure(error) }) }
-  const search = (next: string) => { setQuery(next); onSelect(undefined); loadSuggestions(next) }
-  return <label className="place-field"><span className={`place-dot ${marker}`} /><small>{label}</small><input aria-label={ariaLabel} value={query} onFocus={() => loadSuggestions(query)} onChange={(event) => search(event.target.value)} autoComplete="off" />
-    {suggestions.length > 0 && <span className="suggestions">{suggestions.map((place) => <button type="button" key={place.id} onClick={() => { onSelect(place); setQuery(place.name); setSuggestions([]) }}><b>{place.name}</b><small>{place.address}</small></button>)}</span>}
+  const change = (next: string) => { setQuery(next); onSelect(undefined); search.load(next) }
+  return <label className="place-field"><span className={`place-dot ${marker}`} /><small>{label}</small><input aria-label={ariaLabel} value={query} onFocus={() => search.load(query, true)} onChange={(event) => change(event.target.value)} autoComplete="off" />
+    <PlaceSuggestions query={query} search={search} onSelect={(place) => { onSelect(place); setQuery(place.name); search.clear() }} />
   </label>
 }
 
 function WaypointField({ waypoint, index, planner, onChange, onRemove, onMove, onFailure }: { waypoint: EditableWaypoint; index: number; planner: TransitPlanner; onChange: (waypoint: EditableWaypoint) => void; onRemove: () => void; onMove: (direction: -1 | 1) => void; onFailure: (error: unknown) => void }) {
-  const [suggestions, setSuggestions] = useState<PlaceSearchResult[]>([])
-  const loadSuggestions = (query: string) => { void planner.searchPlaces(query).then(setSuggestions).catch((error: unknown) => { setSuggestions([]); onFailure(error) }) }
-  const search = (query: string) => { onChange({ ...waypoint, query, place: undefined }); loadSuggestions(query) }
+  const suggestions = usePlaceSuggestions(planner, onFailure)
+  const search = (query: string) => { onChange({ ...waypoint, query, place: undefined }); suggestions.load(query) }
   const setDwell = (dwellMinutes: number) => onChange({ ...waypoint, ...resolveWaypointTiming({ arrivalTime: waypoint.arrivalTime, dwellMinutes: Math.max(0, dwellMinutes) }) })
   const setDeparture = (departureTime: number) => {
     if (departureTime < waypoint.arrivalTime) return
     onChange({ ...waypoint, ...resolveWaypointTiming({ arrivalTime: waypoint.arrivalTime, departureTime }) })
   }
   return <div className="waypoint-block" data-testid={`waypoint-${index + 1}`}>
-    <label className="place-field"><span className="place-dot waypoint" /><small>경유 {index + 1}</small><input aria-label={`경유지 ${index + 1}`} value={waypoint.query} onFocus={() => loadSuggestions(waypoint.query)} onChange={(event) => search(event.target.value)} autoComplete="off" />
+    <label className="place-field"><span className="place-dot waypoint" /><small>경유 {index + 1}</small><input aria-label={`경유지 ${index + 1}`} value={waypoint.query} onFocus={() => suggestions.load(waypoint.query, true)} onChange={(event) => search(event.target.value)} autoComplete="off" />
       <span className="waypoint-actions"><button aria-label={`경유지 ${index + 1} 위로`} disabled={index === 0} onClick={() => onMove(-1)}>↑</button><button aria-label={`경유지 ${index + 1} 아래로`} onClick={() => onMove(1)}>↓</button><button aria-label={`경유지 ${index + 1} 삭제`} onClick={onRemove}>×</button></span>
-      {suggestions.length > 0 && <span className="suggestions">{suggestions.map((place) => <button type="button" key={place.id} onClick={() => { onChange({ ...waypoint, place, query: place.name }); setSuggestions([]) }}><b>{place.name}</b><small>{place.address}</small></button>)}</span>}
+      <PlaceSuggestions query={waypoint.query} search={suggestions} onSelect={(place) => { onChange({ ...waypoint, place, query: place.name }); suggestions.clear() }} />
     </label>
     <div className="waypoint-timing"><span>예상 도착 <b>{formatClock(waypoint.arrivalTime)}</b></span><label>체류 <input aria-label={`경유지 ${index + 1} 체류시간`} type="number" min="0" value={waypoint.dwellMinutes} onChange={(event) => setDwell(Number(event.target.value))} />분</label><label>출발 <input aria-label={`경유지 ${index + 1} 출발시간`} type="time" value={formatClock(waypoint.departureTime)} onChange={(event) => setDeparture(parseClock(event.target.value))} /></label></div>
   </div>
+}
+
+interface PlaceSuggestionState {
+  suggestions: PlaceSearchResult[]
+  status: 'idle' | 'loading' | 'ready' | 'empty'
+  load(query: string, immediate?: boolean): void
+  clear(): void
+}
+
+function usePlaceSuggestions(planner: TransitPlanner, onFailure: (error: unknown) => void): PlaceSuggestionState {
+  const [suggestions, setSuggestions] = useState<PlaceSearchResult[]>([])
+  const [status, setStatus] = useState<PlaceSuggestionState['status']>('idle')
+  const timer = useRef<number | undefined>(undefined)
+  const request = useRef(0)
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+
+  const clear = () => {
+    window.clearTimeout(timer.current)
+    request.current += 1
+    setSuggestions([])
+    setStatus('idle')
+  }
+  const load = (query: string, immediate = false) => {
+    window.clearTimeout(timer.current)
+    const keyword = query.trim()
+    const sequence = ++request.current
+    if (!keyword) { setSuggestions([]); setStatus('idle'); return }
+    setStatus('loading')
+    const run = () => { void planner.searchPlaces(keyword).then((places) => {
+      if (sequence !== request.current) return
+      setSuggestions(places)
+      setStatus(places.length ? 'ready' : 'empty')
+    }).catch((error: unknown) => {
+      if (sequence !== request.current) return
+      setSuggestions([]); setStatus('idle'); onFailure(error)
+    }) }
+    if (immediate) run(); else timer.current = window.setTimeout(run, 250)
+  }
+  return { suggestions, status, load, clear }
+}
+
+function PlaceSuggestions({ query, search, onSelect }: { query: string; search: PlaceSuggestionState; onSelect: (place: PlaceSearchResult) => void }) {
+  if (!query.trim() || search.status === 'idle') return null
+  return <span className="suggestions" role="listbox" aria-label={`${query} 장소 검색 결과`}>
+    {search.status === 'loading' && <span className="suggestion-message">검색 중…</span>}
+    {search.status === 'empty' && <span className="suggestion-message">검색 결과가 없습니다</span>}
+    {search.suggestions.map((place) => <button type="button" role="option" key={place.id} onClick={() => onSelect(place)}><b>{place.name}</b><small>{place.address}</small></button>)}
+  </span>
 }
 
 function RouteCard({ route, rank, selected, onSelect }: { route: PlannedRoute; rank: number; selected: boolean; onSelect: () => void }) {

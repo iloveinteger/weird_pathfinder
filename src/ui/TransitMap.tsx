@@ -56,7 +56,7 @@ let sdkPromise: Promise<KakaoMaps> | undefined
 function loadKakaoMaps(key: string): Promise<KakaoMaps> {
   if (window.kakao?.maps) return new Promise((resolve) => window.kakao!.maps.load(() => resolve(window.kakao!.maps)))
   if (sdkPromise) return sdkPromise
-  sdkPromise = new Promise((resolve, reject) => {
+  const loading = new Promise<KakaoMaps>((resolve, reject) => {
     const script = document.createElement('script')
     script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${encodeURIComponent(key)}&autoload=false`
     script.async = true
@@ -64,6 +64,7 @@ function loadKakaoMaps(key: string): Promise<KakaoMaps> {
     script.onerror = () => reject(new Error('Kakao Maps SDK unavailable'))
     document.head.appendChild(script)
   })
+  sdkPromise = loading.catch((error: unknown): never => { sdkPromise = undefined; throw error })
   return sdkPromise
 }
 

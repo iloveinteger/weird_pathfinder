@@ -47,6 +47,20 @@ describe('App planner', () => {
     expect(origin).toHaveValue('서울역')
   })
 
+  it('debounces free-form regional searches to the latest keyword', async () => {
+    const planner = createPlanner()
+    const searchPlaces = vi.spyOn(planner, 'searchPlaces')
+    render(<App planner={planner} />)
+    await screen.findByText('Mock 시간표 준비 완료')
+    searchPlaces.mockClear()
+    const origin = screen.getByLabelText('출발지')
+    fireEvent.change(origin, { target: { value: '서' } })
+    fireEvent.change(origin, { target: { value: '서울역' } })
+    await screen.findByText('서울역', { selector: '.suggestions b' })
+    expect(searchPlaces).toHaveBeenCalledTimes(1)
+    expect(searchPlaces).toHaveBeenCalledWith('서울역')
+  })
+
   it('adds, reorders and removes multiple waypoints', async () => {
     await renderReadyApp()
     const add = screen.getByRole('button', { name: '＋ 경유지 추가' })

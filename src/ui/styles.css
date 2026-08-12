@@ -36,6 +36,7 @@ h1 { margin: 7px 0 0; font-size: 27px; letter-spacing: -.05em; }
 .suggestions { position: absolute; z-index: 20; top: 52px; left: 68px; right: 10px; display: grid; background: #fff; border: 1px solid #d8ded8; border-radius: 10px; box-shadow: 0 10px 26px #1c302324; overflow: hidden; }
 .suggestions button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; border: 0; border-bottom: 1px solid #edf0ec; background: #fff; padding: 10px 12px; text-align: left; }
 .suggestions button:hover { background: #f2f6f2; }
+.suggestion-message { padding: 12px; color: #758078; font-size: 11px; text-align: center; }
 .add-waypoint { margin: 12px 0 20px; border: 0; background: none; color: #476b52; font-size: 12px; font-weight: 700; }
 .time-row { border-top: 1px solid #edf0ec; border-bottom: 1px solid #edf0ec; padding: 14px 0; }
 .time-row label { display: flex; justify-content: space-between; align-items: center; font-size: 12px; font-weight: 700; }
