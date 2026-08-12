@@ -15,7 +15,7 @@ interface EditableWaypoint {
   departureTime: number
 }
 
-interface AppProps { planner: TransitPlanner }
+interface AppProps { planner: TransitPlanner; mapMode?: 'mock' | 'real'; kakaoJavaScriptKey?: string }
 
 const modes: Array<{ id: PlannerMode; label: string; hint: string }> = [
   { id: 'transfers', label: '최소 환승', hint: '갈아타는 횟수 우선' },
@@ -24,7 +24,7 @@ const modes: Array<{ id: PlannerMode; label: string; hint: string }> = [
   { id: 'hard', label: '최소 시간 Hard', hint: '빠른 환승까지 탐색' },
 ]
 
-export function App({ planner }: AppProps) {
+export function App({ planner, mapMode = 'mock', kakaoJavaScriptKey }: AppProps) {
   const [origin, setOrigin] = useState<PlaceSearchResult>()
   const [destination, setDestination] = useState<PlaceSearchResult>()
   const [waypoints, setWaypoints] = useState<EditableWaypoint[]>([])
@@ -40,9 +40,9 @@ export function App({ planner }: AppProps) {
     void planner.searchPlaces('').then((places) => {
       setOrigin(places.find((place) => place.id === 'gwanghwamun') ?? places[0])
       setDestination(places.find((place) => place.id === 'jamsil') ?? places.at(-1))
-      setStatus('Mock 시간표 준비 완료')
+      setStatus(mapMode === 'real' ? 'Real provider 준비 완료' : 'Mock 시간표 준비 완료')
     }).catch((error: unknown) => setStatus(providerFailureMessage(error)))
-  }, [planner])
+  }, [planner, mapMode])
 
   const chooseRoute = (route: PlannedRoute) => {
     setSelectedRoute(route)
@@ -80,17 +80,17 @@ export function App({ planner }: AppProps) {
     } else {
       setSelectedRoute(undefined)
       setSelectedVariant(undefined)
-      setStatus('현재 mock 시간표에서는 가능한 경로가 없습니다')
+      setStatus(mapMode === 'real' ? '현재 실데이터에서 가능한 경로가 없습니다' : '현재 mock 시간표에서는 가능한 경로가 없습니다')
     }
   }
 
   if (activeTrip && selectedRoute && selectedVariant) {
-    return <ActiveTrip planner={planner} route={selectedRoute} variant={selectedVariant} onVariantChange={setSelectedVariant} onBack={() => setActiveTrip(false)} />
+    return <ActiveTrip planner={planner} route={selectedRoute} variant={selectedVariant} mapMode={mapMode} kakaoJavaScriptKey={kakaoJavaScriptKey} onVariantChange={setSelectedVariant} onBack={() => setActiveTrip(false)} />
   }
 
   return (
     <main className="app-shell">
-      <Header />
+      <Header mode={mapMode} />
       <div className="workspace">
         <div className="content-column">
           <section className="planner-panel" aria-label="경로 검색">
@@ -120,36 +120,38 @@ export function App({ planner }: AppProps) {
 
           {selectedRoute && selectedVariant && <RouteDetail planner={planner} route={selectedRoute} variant={selectedVariant} onVariantChange={setSelectedVariant} onStart={() => setActiveTrip(true)} />}
         </div>
-        <TransitMap journey={selectedVariant?.journey} />
+        <TransitMap journey={selectedVariant?.journey} origin={origin?.coordinate} destination={destination?.coordinate} waypoints={waypoints.flatMap((waypoint) => waypoint.place ? [waypoint.place.coordinate] : [])} mode={mapMode} kakaoJavaScriptKey={kakaoJavaScriptKey} />
       </div>
     </main>
   )
 }
 
-function Header() {
-  return <header className="topbar"><a className="brand" href="#">샛길 <span>WEIRD PATHFINDER</span></a><span className="mock-badge">MOCK NETWORK · 2026.08.12</span></header>
+function Header({ mode = 'mock' }: { mode?: 'mock' | 'real' }) {
+  return <header className="topbar"><a className="brand" href="#">샛길 <span>WEIRD PATHFINDER</span></a><span className="mock-badge">{mode === 'real' ? 'REAL PROVIDERS' : 'MOCK NETWORK · 2026.08.12'}</span></header>
 }
 
 function PlaceField({ label, ariaLabel, marker, value, planner, onSelect }: { label: string; ariaLabel: string; marker: string; value?: PlaceSearchResult; planner: TransitPlanner; onSelect: (place: PlaceSearchResult | undefined) => void }) {
   const [query, setQuery] = useState(value?.name ?? '')
   const [suggestions, setSuggestions] = useState<PlaceSearchResult[]>([])
   useEffect(() => { if (value) setQuery(value.name) }, [value])
-  const search = (next: string) => { setQuery(next); onSelect(undefined); void planner.searchPlaces(next).then(setSuggestions) }
-  return <label className="place-field"><span className={`place-dot ${marker}`} /><small>{label}</small><input aria-label={ariaLabel} value={query} onFocus={() => void planner.searchPlaces(query).then(setSuggestions)} onChange={(event) => search(event.target.value)} autoComplete="off" />
+  const loadSuggestions = (next: string) => { void planner.searchPlaces(next).then(setSuggestions).catch(() => setSuggestions([])) }
+  const search = (next: string) => { setQuery(next); onSelect(undefined); loadSuggestions(next) }
+  return <label className="place-field"><span className={`place-dot ${marker}`} /><small>{label}</small><input aria-label={ariaLabel} value={query} onFocus={() => loadSuggestions(query)} onChange={(event) => search(event.target.value)} autoComplete="off" />
     {suggestions.length > 0 && <span className="suggestions">{suggestions.map((place) => <button type="button" key={place.id} onClick={() => { onSelect(place); setQuery(place.name); setSuggestions([]) }}><b>{place.name}</b><small>{place.address}</small></button>)}</span>}
   </label>
 }
 
 function WaypointField({ waypoint, index, planner, onChange, onRemove, onMove }: { waypoint: EditableWaypoint; index: number; planner: TransitPlanner; onChange: (waypoint: EditableWaypoint) => void; onRemove: () => void; onMove: (direction: -1 | 1) => void }) {
   const [suggestions, setSuggestions] = useState<PlaceSearchResult[]>([])
-  const search = (query: string) => { onChange({ ...waypoint, query, place: undefined }); void planner.searchPlaces(query).then(setSuggestions) }
+  const loadSuggestions = (query: string) => { void planner.searchPlaces(query).then(setSuggestions).catch(() => setSuggestions([])) }
+  const search = (query: string) => { onChange({ ...waypoint, query, place: undefined }); loadSuggestions(query) }
   const setDwell = (dwellMinutes: number) => onChange({ ...waypoint, ...resolveWaypointTiming({ arrivalTime: waypoint.arrivalTime, dwellMinutes: Math.max(0, dwellMinutes) }) })
   const setDeparture = (departureTime: number) => {
     if (departureTime < waypoint.arrivalTime) return
     onChange({ ...waypoint, ...resolveWaypointTiming({ arrivalTime: waypoint.arrivalTime, departureTime }) })
   }
   return <div className="waypoint-block" data-testid={`waypoint-${index + 1}`}>
-    <label className="place-field"><span className="place-dot waypoint" /><small>경유 {index + 1}</small><input aria-label={`경유지 ${index + 1}`} value={waypoint.query} onFocus={() => void planner.searchPlaces(waypoint.query).then(setSuggestions)} onChange={(event) => search(event.target.value)} autoComplete="off" />
+    <label className="place-field"><span className="place-dot waypoint" /><small>경유 {index + 1}</small><input aria-label={`경유지 ${index + 1}`} value={waypoint.query} onFocus={() => loadSuggestions(waypoint.query)} onChange={(event) => search(event.target.value)} autoComplete="off" />
       <span className="waypoint-actions"><button aria-label={`경유지 ${index + 1} 위로`} disabled={index === 0} onClick={() => onMove(-1)}>↑</button><button aria-label={`경유지 ${index + 1} 아래로`} onClick={() => onMove(1)}>↓</button><button aria-label={`경유지 ${index + 1} 삭제`} onClick={onRemove}>×</button></span>
       {suggestions.length > 0 && <span className="suggestions">{suggestions.map((place) => <button type="button" key={place.id} onClick={() => { onChange({ ...waypoint, place, query: place.name }); setSuggestions([]) }}><b>{place.name}</b><small>{place.address}</small></button>)}</span>}
     </label>
@@ -185,7 +187,7 @@ function RouteDetail({ planner, route, variant, onVariantChange, onStart }: { pl
   </section>
 }
 
-function ActiveTrip({ planner, route, variant, onVariantChange, onBack }: { planner: TransitPlanner; route: PlannedRoute; variant: TimingVariant; onVariantChange: (variant: TimingVariant) => void; onBack: () => void }) {
+function ActiveTrip({ planner, route, variant, mapMode, kakaoJavaScriptKey, onVariantChange, onBack }: { planner: TransitPlanner; route: PlannedRoute; variant: TimingVariant; mapMode: 'mock' | 'real'; kakaoJavaScriptKey?: string; onVariantChange: (variant: TimingVariant) => void; onBack: () => void }) {
   const [elapsedSeconds, setElapsedSeconds] = useState(0)
   useEffect(() => { const timer = window.setInterval(() => setElapsedSeconds((value) => value + 1), 1000); return () => window.clearInterval(timer) }, [])
   const transitSegments = variant.journey.segments.filter((segment) => segment.type === 'transit')
@@ -193,7 +195,7 @@ function ActiveTrip({ planner, route, variant, onVariantChange, onBack }: { plan
   const upcoming = transitSegments[1] ?? current
   const vehicleVariants = uniqueVehicleVariants(route.variants)
   const countdown = Math.max(0, upcoming.departureTime * 60 - variant.journey.departureTime * 60 - elapsedSeconds)
-  return <main className="app-shell active-shell"><Header /><div className="active-workspace"><section className="active-panel">
+  return <main className="app-shell active-shell"><Header mode={mapMode} /><div className="active-workspace"><section className="active-panel">
     <button className="back-button" onClick={onBack}>← 경로 상세</button><span className="live-badge"><i /> ACTIVE TRIP</span>
     <div className="active-hero"><span>{current?.mode === 'subway' ? '지하철' : '버스'}</span><h1>{current ? transitLabel(current.routeId, current.mode) : '도보 이동'}</h1><p>현재 이용 중인 교통수단</p></div>
     <div className="progress-track"><i /><i className="future" /><i className="future" /></div>
@@ -204,7 +206,7 @@ function ActiveTrip({ planner, route, variant, onVariantChange, onBack }: { plan
       return vehicle && <button key={item.id} aria-pressed={item.id === variant.id} onClick={() => onVariantChange(item)}>{formatClock(vehicle.departureTime)} {vehicle.mode === 'subway' ? '열차' : '버스'} 탑승 <span>ETA {formatClock(item.arrivalTime)}</span></button>
     })}<button aria-pressed={vehicleVariants.at(-1)?.id === variant.id} onClick={() => vehicleVariants.at(-1) && onVariantChange(vehicleVariants.at(-1)!)}>다른 차량 <span>{vehicleVariants.at(-1) ? `ETA ${formatClock(vehicleVariants.at(-1)!.arrivalTime)}` : '직접 선택'}</span></button></div>
     <div className="eta-card"><small>현재 예상 최종 도착시간</small><b>{formatClock(variant.arrivalTime)}</b><span>총 {durationLabel(variant.journey.departureTime, variant.arrivalTime)}</span></div>
-  </section><TransitMap journey={variant.journey} active /></div></main>
+  </section><TransitMap journey={variant.journey} active mode={mapMode} kakaoJavaScriptKey={kakaoJavaScriptKey} /></div></main>
 }
 
 function newWaypoint(index: number, departureTime: number): EditableWaypoint {

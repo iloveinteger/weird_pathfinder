@@ -5,8 +5,9 @@ import { loadPublicRuntimeConfig } from './config/runtime'
 import { App } from './ui/App'
 import './ui/styles.css'
 
-const application = createTransitApplication(loadPublicRuntimeConfig(import.meta.env))
+const runtimeConfig = loadPublicRuntimeConfig(import.meta.env)
+const application = createTransitApplication(runtimeConfig)
 
 createRoot(document.getElementById('root')!).render(
-  <StrictMode><App planner={application.planner} /></StrictMode>,
+  <StrictMode><App planner={application.planner} mapMode={application.providerMode} kakaoJavaScriptKey={runtimeConfig.kakaoJavaScriptKey} /></StrictMode>,
 )

@@ -5,21 +5,23 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && tsc -p tsconfig.server.json && vite build",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:diagnostic": "vitest run src/routing/hard/diagnostic.test.ts --reporter=verbose"
+    "test:diagnostic": "vitest run src/routing/hard/diagnostic.test.ts --reporter=verbose",
+    "test:smoke": "vitest run server/smoke.test.ts --reporter=verbose"
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
-    "vite": "latest",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "vite": "latest"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "latest",
     "@testing-library/react": "latest",
+    "@types/node": "^26.2.0",
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "jsdom": "latest",

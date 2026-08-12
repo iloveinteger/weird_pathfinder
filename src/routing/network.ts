@@ -1,4 +1,4 @@
-import type { StopId, TransitPoint, TransitRoute, TransitTrip } from '../domain/models'
+import type { Coordinate, StopId, TransitPoint, TransitRoute, TransitTrip } from '../domain/models'
 
 export interface WalkingLink {
   fromStopId: StopId
@@ -7,6 +7,7 @@ export interface WalkingLink {
   durationMinutes: number
   purpose: 'access' | 'transfer' | 'egress'
   bidirectional?: boolean
+  path?: Coordinate[]
 }
 
 export interface TransitNetwork {

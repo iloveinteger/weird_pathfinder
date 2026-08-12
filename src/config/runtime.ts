@@ -3,11 +3,13 @@ export type ProviderMode = 'mock' | 'real'
 export interface PublicRuntimeConfig {
   providerMode: ProviderMode
   kakaoJavaScriptKey?: string
+  apiBaseUrl?: string
 }
 
 export interface PublicEnvironment {
   readonly VITE_PROVIDER_MODE?: string
   readonly VITE_KAKAO_JAVASCRIPT_KEY?: string
+  readonly VITE_API_BASE_URL?: string
 }
 
 export function loadPublicRuntimeConfig(environment: PublicEnvironment): PublicRuntimeConfig {
@@ -17,8 +19,10 @@ export function loadPublicRuntimeConfig(environment: PublicEnvironment): PublicR
   }
 
   const kakaoJavaScriptKey = environment.VITE_KAKAO_JAVASCRIPT_KEY?.trim()
+  const apiBaseUrl = environment.VITE_API_BASE_URL?.trim()
   return {
     providerMode: requestedMode === 'real' ? 'real' : 'mock',
     ...(kakaoJavaScriptKey ? { kakaoJavaScriptKey } : {}),
+    ...(apiBaseUrl ? { apiBaseUrl } : {}),
   }
 }

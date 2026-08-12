@@ -1,6 +1,6 @@
 import type { Coordinate, PlaceSearchResult, RouteId, StopId, TransitPoint } from '../domain/models'
-import type { ArrivalEstimate, BusProvider, PlaceProvider, SubwayProvider, TransitProviderSet, VehiclePosition, WalkingProvider, WalkingRoute } from '../providers/interfaces'
-import { mockPoints, mockRoutes, mockTrips } from './network'
+import type { ArrivalEstimate, BusProvider, PlaceProvider, SubwayProvider, TransitNetworkProvider, TransitProviderSet, VehiclePosition, WalkingProvider, WalkingRoute } from '../providers/interfaces'
+import { mockNetwork, mockPoints, mockRoutes, mockTrips } from './network'
 
 export class MockPlaceProvider implements PlaceProvider {
   async search(query: string): Promise<PlaceSearchResult[]> {
@@ -24,9 +24,17 @@ export class MockWalkingProvider implements WalkingProvider {
 export class MockBusProvider implements BusProvider {
   async getStops(): Promise<TransitPoint[]> { return mockPoints.filter((point) => point.kind === 'bus-stop') }
   async getRoutes() { return mockRoutes.filter((route) => route.mode === 'bus') }
+  async getRouteStops(routeId: RouteId): Promise<TransitPoint[]> {
+    const ids = mockRoutes.find((route) => route.id === routeId)?.stopIds ?? []
+    return mockPoints.filter((point) => ids.includes(point.id))
+  }
   async getTrips(serviceDate: string) { return mockTrips.filter((trip) => trip.serviceDate === serviceDate && trip.routeId.startsWith('bus-')) }
   async getVehiclePositions(_routeId?: RouteId): Promise<VehiclePosition[]> { return [] }
   async getArrivals(_stopId: StopId): Promise<ArrivalEstimate[]> { return [] }
+}
+
+export class MockTransitNetworkProvider implements TransitNetworkProvider {
+  async getNetwork() { return mockNetwork }
 }
 
 export class MockSubwayProvider implements SubwayProvider {
@@ -42,5 +50,6 @@ export function createMockProviderSet(): TransitProviderSet {
     walking: new MockWalkingProvider(),
     bus: new MockBusProvider(),
     subway: new MockSubwayProvider(),
+    network: new MockTransitNetworkProvider(),
   }
 }

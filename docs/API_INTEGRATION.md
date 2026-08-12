@@ -1,75 +1,125 @@
-# API 연동 준비
+# API 연동
 
-현재 기본값은 `mock`이며 실제 네트워크 요청은 발생하지 않는다. `VITE_PROVIDER_MODE=real`로 빌드하면 아직 구현되지 않은 provider가 `ProviderUnavailableError`(`code: PROVIDER_UNAVAILABLE`)를 반환한다. 실제 키를 연결하기 전까지 지도 역시 기존 `TransitMap` placeholder를 유지한다.
+## 구현 상태
 
-## 환경변수와 실행 위치
-
-| 환경변수 | 사용 위치 | 예정 용도 | 브라우저 노출 |
-|---|---|---|---|
-| `VITE_KAKAO_JAVASCRIPT_KEY` | frontend | Kakao Maps JavaScript SDK 지도 표시 | 허용 |
-| `KAKAO_REST_API_KEY` | backend/serverless | Kakao Local 장소 검색·역지오코딩 | 금지 |
-| `DATA_GO_KR_SERVICE_KEY` | backend/serverless | 공공데이터포털/TAGO 버스 정적·실시간 데이터 | 금지 |
-| `SEOUL_OPEN_API_KEY` | backend/serverless | 서울 열린데이터광장 교통 데이터 | 금지 |
-| `SEOUL_SUBWAY_REALTIME_API_KEY` | backend/serverless | 서울 지하철 실시간 도착 데이터 | 금지 |
-
-`VITE_PROVIDER_MODE`는 비밀이 아닌 빌드 설정이며 `mock` 또는 `real`만 허용한다. Vite는 `VITE_` 접두사가 붙은 값을 브라우저 bundle에 포함할 수 있으므로 server key에는 절대 이 접두사를 붙이지 않는다. 저장소에는 빈 템플릿인 `.env.example`만 커밋한다. `.env`, `.env.local`, 기타 `.env.*` 파일은 ignore 대상이다.
-
-## mock에서 real로 교체하는 지점
+외부 호출은 `server/`의 Vercel-compatible serverless backend에서만 수행한다. frontend의 real provider는 자체 `/api` endpoint가 반환한 공통 domain model만 사용한다. routing core에는 upstream URL, key, raw DTO가 들어가지 않는다.
 
 ```text
-main.tsx
-  → loadPublicRuntimeConfig(import.meta.env)
-  → createTransitApplication(config)       application composition root
-      ├─ mock → createMockProviderSet()
-      └─ real → createRealProviderSet()     현재 unavailable stub
-                    ↓
-             normalized domain models
-                    ↓
-             TimeDependentRouter
+Kakao / TAGO / 서울 API
+  → server provider + normalizer
+  → PlaceSearchResult / WalkingRoute / TransitNetwork / realtime overlay
+  → TimeDependentRouter / HardRouter
+  → RealTransitPlanner
+  → React UI / Kakao Maps
 ```
 
-- 공통 계약과 provider 묶음: `src/providers/interfaces.ts`
-- mode 선택과 planner 조립: `src/application/createApplication.ts`
-- mock 구현: `src/mock/providers.ts`
-- real adapter 자리: `src/providers/real/providers.ts`
-- 안정적인 미구현 오류: `src/providers/availability.ts`
-- public frontend 설정 파싱: `src/config/runtime.ts`
-- Kakao Maps 교체점: `src/ui/TransitMap.tsx`
+연결된 공식 API:
 
-Kakao Local, 공공데이터, 서울 API의 원본 응답은 향후 backend adapter에서 공통 `PlaceSearchResult`, `TransitPoint`, `TransitRoute`, `TransitTrip`, `ArrivalEstimate`, `VehiclePosition`으로 정규화한다. application layer가 이 snapshot을 `TransitNetwork`로 조립하고 routing core에 전달한다. routing core는 API URL, 인증키, 응답 DTO나 provider mode를 알지 않는다.
+- Kakao Local: keyword 장소 검색, 좌표→주소 변환
+- Kakao Map REST: 보행 경로, 대중교통 경로 bootstrap snapshot
+- Kakao Maps JavaScript SDK: 실제 지도, marker, segment별 polyline
+- 국토교통부 TAGO: 좌표기반 버스 정류장, 버스 노선, 노선별 경유 정류장, 버스 도착, 버스 위치, 지하철역, 역별 시간표
+- 서울 열린데이터광장: 노선별 지하철역 정보
+- 서울 지하철 실시간: 역명 기반 실시간 도착정보
 
-Kakao Maps JavaScript SDK는 경로 계산 provider가 아니다. 실제 지도 연결 시 `TransitMap` 내부 렌더러만 교체하고 `Journey` 입력 계약과 현재 mock map fallback은 유지한다. 도보 경로 데이터 소스는 아직 결정하지 않았으므로 `RealWalkingProvider`도 명시적으로 unavailable을 반환한다.
+참조: [Kakao Map REST API](https://developers.kakao.com/docs/en/kakaomap/rest-api), [TAGO 버스노선](https://www.data.go.kr/data/15098529/openapi.do), [TAGO 버스도착](https://www.data.go.kr/data/15098530/openapi.do), [TAGO 버스위치](https://www.data.go.kr/data/15098533/openapi.do), [TAGO 버스정류소](https://www.data.go.kr/data/15098534/openapi.do), [TAGO 지하철](https://www.data.go.kr/data/15098554/openapi.do), [서울 지하철 실시간](https://data.seoul.go.kr/dataList/OA-12764/A/1/datasetView.do).
 
-## GitHub Pages와 향후 backend
+## Backend endpoint
 
-현재 GitHub Pages workflow는 테스트 후 build 단계에 repository secret `VITE_KAKAO_JAVASCRIPT_KEY`만 주입한다. secret이 등록되지 않아도 mock mode build는 동작한다. GitHub Pages는 정적 호스팅이므로 REST/service key가 필요한 호출을 안전하게 대신할 수 없다.
+`VITE_API_BASE_URL=https://<backend-host>/api`를 기준으로 한다.
 
-실제 연동 단계에서는 별도 backend 또는 serverless endpoint를 둔다.
+| Endpoint | 결과 | Cache |
+|---|---|---:|
+| `GET /places/search?q=` | `PlaceSearchResult[]` | 10분 |
+| `GET /places/reverse?lat=&lng=` | `PlaceSearchResult \| null` | 10분 |
+| `GET /walking?fromLat=&fromLng=&toLat=&toLng=` | `WalkingRoute` | 15분 |
+| `GET /transit/network?originLat=&originLng=&destinationLat=&destinationLng=&departureTime=&serviceDate=` | normalized `TransitNetwork` | 15초 |
+| `GET /bus/stops?lat=&lng=` | `TransitPoint[]` | 6시간 |
+| `GET /bus/routes?cityCode=&routeNo=` | `TransitRoute[]` | 6시간 |
+| `GET /bus/route-stops?cityCode=&routeId=` | 순서가 보존된 `TransitPoint[]` | 6시간 |
+| `GET /bus/arrivals?cityCode=&stopId=` | `ArrivalEstimate[]` | 15초 |
+| `GET /bus/vehicles?cityCode=&routeId=` | `VehiclePosition[]` | 15초 |
+| `GET /subway/stations?q=` | `TransitPoint[]` | 6시간 |
+| `GET /subway/timetable?stationId=&serviceDate=&dayType=&direction=` | `TransitTrip[]` 형식의 역별 event | 6시간 |
+| `GET /subway/realtime?stationName=&stationId=` | realtime arrival overlay | 15초 |
+| `GET /seoul/stations?stationName=` | 서울 노선별 역 원본 확인 endpoint | 6시간 |
+| `GET /health` | backend 상태 | 짧음 |
 
-```text
-GitHub Pages frontend
-  ├─ Kakao Maps JS (JavaScript key)
-  └─ HTTPS → backend/serverless
-                ├─ Kakao Local (REST key)
-                ├─ 공공데이터포털 (service key)
-                └─ 서울 교통 API (server keys)
+in-memory TTL cache는 같은 serverless instance에서 동작하며 동일 key의 동시 요청은 하나의 upstream 요청으로 합친다. 응답에는 CDN용 `Cache-Control`도 설정한다. 여러 instance 사이의 강한 cache 공유가 필요하면 이후 Vercel KV/Redis adapter로 교체한다.
+
+upstream 호출은 기본 5초 timeout, transient failure 1회 retry, HTTP 429 quota 변환, malformed JSON/response 검증을 적용한다. client에는 key, 인증 header, 전체 upstream URL을 반환하지 않는다. 일부 provider 장애는 해당 endpoint의 구조화된 오류로 제한되며 mock mode와 지도 fallback은 계속 동작한다.
+
+## 환경변수
+
+### Frontend public
+
+| 이름 | 설명 |
+|---|---|
+| `VITE_PROVIDER_MODE` | `mock` 또는 `real` |
+| `VITE_API_BASE_URL` | 배포된 backend의 `/api` URL |
+| `VITE_KAKAO_JAVASCRIPT_KEY` | Kakao Maps JavaScript SDK key |
+
+GitHub repository secret 이름은 `KAKAO_JAVASCRIPT_KEY`이며 Pages workflow가 build 시 `VITE_KAKAO_JAVASCRIPT_KEY`로 매핑한다. `API_BASE_URL`과 `PROVIDER_MODE`는 비밀이 아니므로 GitHub Actions repository variable로 둔다.
+
+### Backend secret
+
+- `KAKAO_REST_API_KEY`
+- `DATA_GO_KR_SERVICE_KEY`
+- `SEOUL_OPEN_API_KEY`
+- `SEOUL_SUBWAY_REALTIME_API_KEY`
+- `ALLOWED_ORIGIN` (선택, comma-separated)
+
+backend key에 `VITE_` prefix를 붙이지 않는다. `.env`, `.env.local`, `.env.*`는 추적하지 않고 `.env.example`만 유지한다.
+
+## 실행과 mode 전환
+
+mock frontend:
+
+```bash
+npm run dev
 ```
 
-backend는 입력 검증, provider별 timeout/retry, rate limit, 캐시, 원본 응답 정규화와 오류 변환을 담당한다. frontend의 real provider는 backend의 안정적인 자체 API만 호출해야 한다.
+real frontend는 로컬 serverless backend가 먼저 떠 있어야 한다.
 
-## 보안 주의사항
+```bash
+npx vercel dev
+```
 
-- 실제 key를 코드, 문서, 테스트 fixture, URL query가 찍히는 로그에 넣지 않는다.
-- GitHub Actions에서는 secret 값을 출력하지 않고 `${{ secrets.VITE_KAKAO_JAVASCRIPT_KEY }}` 참조만 build 환경에 전달한다.
-- repository secret의 존재나 값 확인을 위해 secret을 echo하거나 로컬로 내려받지 않는다.
-- browser devtools에서 확인 가능한 모든 값은 공개 값으로 취급한다. Kakao JavaScript key에는 허용 도메인 제한을 설정한다.
-- backend key는 배포 플랫폼의 secret manager에 저장하고 최소 권한, 사용량 제한, 주기적 rotation 정책을 적용한다.
-- 오류 응답과 telemetry에는 key, 인증 header, 전체 provider URL을 남기지 않는다.
+로컬의 추적되지 않는 `.env.local`에 `VITE_PROVIDER_MODE=real`, `VITE_API_BASE_URL=http://localhost:3000/api`, public JavaScript key와 backend secret을 설정한다. 실제 값은 출력하지 않는다.
 
-## 실제 연결 시 작업 순서
+## Backend 배포
 
-1. backend/serverless API 계약과 인증·CORS·캐시 정책을 정한다.
-2. real adapter stub을 backend client 구현으로 바꾸고 provider 응답 정규화 contract test를 추가한다.
-3. 정적 시간표와 실시간 도착정보를 결합해 불변 `TransitNetwork` snapshot을 application layer에서 만든다.
-4. `TransitMap`에 Kakao Maps SDK adapter를 추가하되 key 미설정 시 mock map으로 fallback한다.
-5. staging에서 `real` mode의 timeout, unavailable, 부분 provider 장애와 key 미설정 동작을 검증한다.
+가장 단순한 배포 대상으로 Vercel Functions를 선택했다. `api/index.ts`, `server/app.ts`, `vercel.json`이 배포 단위다.
+
+1. Vercel에서 GitHub repository를 import한다.
+2. 위 네 backend secret과 `ALLOWED_ORIGIN=https://iloveinteger.github.io`를 Vercel project environment에 등록한다.
+3. 배포 후 `/api/health`를 확인한다.
+4. GitHub repository variable `API_BASE_URL`을 `https://<vercel-project>/api`, `PROVIDER_MODE`를 `real`로 설정한다.
+5. Pages workflow를 재실행한다.
+
+GitHub repository secret은 Vercel로 자동 전달되지 않는다. Vercel deployment credential이 저장소에 없으므로 repository code만으로 원격 backend를 자동 생성하거나 secret을 이관할 수 없다. 자동 배포가 필요하면 별도로 `VERCEL_TOKEN`, `VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`를 추가해야 한다.
+
+## 정적 그래프와 실시간 overlay
+
+서울 실시간 응답은 `RealtimeArrivalOverlay` 형태로 정규화하며 `observedAt`, `expectedAt`, source를 별도로 유지한다. 정적 `TransitTrip`을 수정하지 않는다. 이후 snapshot builder가 overlay freshness와 train/route matching을 확인한 뒤 검색 시점의 복사본에만 delay를 적용해야 한다.
+
+현재 real routing bootstrap은 Kakao 대중교통 후보의 step/path/duration을 `TransitNetwork`로 정규화한 뒤 기존 `TimeDependentRouter`와 `HardRouter`에 전달한다. core 코드는 API 형식에 맞춰 변경하지 않았다. TAGO 정적·실시간 endpoint도 domain model로 연결되어 있지만, TAGO 버스 API가 전체 운행시각표를 제공하지 않기 때문에 아직 TAGO 데이터만으로 전국 독립 시간의존 graph를 만들지는 못한다.
+
+## 알려진 제약과 미지원
+
+- TAGO 버스의 완전한 정적 운행시각표가 없어 bus `getTrips`는 명시적으로 `bus-timetable` unavailable을 반환한다.
+- Kakao 대중교통 snapshot은 upstream 후보와 duration을 core가 재탐색하는 bootstrap이다. 독립 전국 graph를 대체하지 않는다.
+- TAGO 지하철 시간표 응답은 역 단위 event다. 같은 열차번호의 여러 역 event를 수집·결합해야 완전한 multi-stop `TransitTrip`이 된다.
+- provider별 활용신청은 service 단위일 수 있다. 같은 공공데이터 key가 있어도 미승인 API는 접근 거부될 수 있다.
+- TAGO 도시코드와 지역별 데이터 품질이 다르다. frontend bus adapter의 현재 기본 도시코드는 서울 `11`이다.
+- 서울 실시간 정보는 서울권 및 제공 노선 범위에 한정된다.
+- Kakao Maps 허용 도메인에 localhost, GitHub Pages domain을 등록해야 실제 지도가 표시된다. 실패하거나 key가 없으면 mock map으로 fallback한다.
+- serverless instance 간 shared cache, realtime overlay의 정적 trip 자동 matching, 전국 service calendar/공휴일 graph는 아직 미지원이다.
+
+## 테스트
+
+- unit: response normalization, malformed payload, quota mapping, retry, backend routing/CORS, TTL/single-flight, mock/real mode
+- `npm run test:smoke`: 네 backend key가 모두 있는 환경에서 실제 provider 8개 항목을 호출하며, 없으면 skip
+- `.github/workflows/api-smoke.yml`: GitHub repository secrets를 값 출력 없이 smoke test env로 주입하는 수동 workflow
+
+보안 검증 시 frontend `dist`에 backend secret 이름/값이 없는지, tracked `.env`가 없는지, key assignment가 빈 example 또는 Actions secret reference뿐인지 확인한다.

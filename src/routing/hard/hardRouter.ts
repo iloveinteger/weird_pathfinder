@@ -32,11 +32,15 @@ export class HardRouter {
   private readonly walkingFrom = new Map<string, WalkingLink[]>()
   private readonly boardingsFrom = new Map<string, BoardingOption[]>()
   private readonly routeModes = new Map<string, 'bus' | 'subway'>()
+  private readonly routePaths = new Map<string, NonNullable<TransitSegment['path']>>()
   private nextStateId = 0
 
   constructor(private readonly network: TransitNetwork) {
     validateNetwork(network)
-    for (const route of network.routes) this.routeModes.set(route.id, route.mode)
+    for (const route of network.routes) {
+      this.routeModes.set(route.id, route.mode)
+      if (route.path) this.routePaths.set(route.id, route.path)
+    }
     for (const link of network.walkingLinks) {
       this.addWalkingLink(link)
       if (link.bidirectional) {
@@ -145,6 +149,7 @@ export class HardRouter {
         distanceMeters: link.distanceMeters,
         purpose: link.purpose,
         pace: profile.pace,
+        path: link.path,
       }
       return {
         ...state,
@@ -183,6 +188,7 @@ export class HardRouter {
       arrivalTime: alighting.arrivalTime,
       boardingSequence: boarding.sequence,
       alightingSequence: alighting.sequence,
+      path: this.routePaths.get(option.trip.routeId),
     }
     const isTransfer = state.transitBoardings > 0
     const transferChoice: AggressiveTransferChoice | undefined = isTransfer ? {

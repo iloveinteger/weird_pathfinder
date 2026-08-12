@@ -28,6 +28,7 @@ export function branchAcrossWalkingLink(
       distanceMeters: link.distanceMeters,
       purpose: link.purpose,
       pace: profile.pace,
+      path: link.path,
     }
     return {
       ...state,

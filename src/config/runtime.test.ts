@@ -10,7 +10,8 @@ describe('public runtime configuration', () => {
     expect(loadPublicRuntimeConfig({
       VITE_PROVIDER_MODE: 'real',
       VITE_KAKAO_JAVASCRIPT_KEY: 'public-browser-key',
-    })).toEqual({ providerMode: 'real', kakaoJavaScriptKey: 'public-browser-key' })
+      VITE_API_BASE_URL: 'https://backend.example/api',
+    })).toEqual({ providerMode: 'real', kakaoJavaScriptKey: 'public-browser-key', apiBaseUrl: 'https://backend.example/api' })
   })
 
   it('rejects an unknown provider mode', () => {

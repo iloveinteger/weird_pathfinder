@@ -1,4 +1,4 @@
-export type ProviderId = 'kakao-local' | 'walking-route' | 'public-data-bus' | 'seoul-subway-realtime' | 'transit-network'
+export type ProviderId = 'kakao-local' | 'walking-route' | 'public-data-bus' | 'seoul-subway-realtime' | 'transit-network' | 'bus-timetable'
 
 /** Stable failure used while a real adapter or its backend endpoint is not available. */
 export class ProviderUnavailableError extends Error {

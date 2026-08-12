@@ -34,6 +34,7 @@ export interface TransitRoute {
   mode: TransitMode
   color: string
   stopIds: StopId[]
+  path?: Coordinate[]
 }
 
 export interface ScheduledStop {
@@ -61,6 +62,7 @@ export interface WalkSegment {
   distanceMeters: number
   purpose: 'access' | 'transfer' | 'egress'
   pace: TransferPace
+  path?: Coordinate[]
 }
 
 export interface TransitSegment {
@@ -74,6 +76,7 @@ export interface TransitSegment {
   arrivalTime: Minutes
   boardingSequence: number
   alightingSequence: number
+  path?: Coordinate[]
 }
 
 export type JourneySegment = WalkSegment | TransitSegment
