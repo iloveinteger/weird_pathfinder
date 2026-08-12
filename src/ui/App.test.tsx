@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CoreTransitPlanner } from '../application/transitPlanner'
 import { mockNetwork } from '../mock/network'
 import { MockPlaceProvider } from '../mock/providers'
+import { ProviderUnavailableError } from '../providers/availability'
 import { TimeDependentRouter } from '../routing/router'
 import { App } from './App'
 
@@ -59,6 +60,18 @@ describe('App planner', () => {
     await screen.findByText('서울역', { selector: '.suggestions b' })
     expect(searchPlaces).toHaveBeenCalledTimes(1)
     expect(searchPlaces).toHaveBeenCalledWith('서울역')
+  })
+
+  it('shows a friendly provider status instead of the internal provider error', async () => {
+    const planner = createPlanner()
+    vi.spyOn(planner, 'searchPlaces').mockImplementation((query) => query
+      ? Promise.reject(new ProviderUnavailableError('kakao-local'))
+      : Promise.resolve([]))
+    render(<App planner={planner} mapMode="real" />)
+    fireEvent.change(screen.getByLabelText('출발지'), { target: { value: '서울역' } })
+
+    await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('실데이터 provider를 사용할 수 없습니다'))
+    expect(screen.queryByText(/Provider unavailable:/)).not.toBeInTheDocument()
   })
 
   it('adds, reorders and removes multiple waypoints', async () => {
