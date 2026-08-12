@@ -61,6 +61,7 @@ export class UpstreamProviders {
   }
 
   private async overlayRealtimeSubway(network: TransitNetwork, boardings: ReturnType<typeof extractKakaoTransitBoardings>, departureTime: number): Promise<TransitNetwork> {
+    if (!isSeoulTransitServiceWindow(departureTime)) return retainNightService(network)
     const stations = [...new Set(boardings.filter((item) => item.mode === 'subway' && item.stationName).map((item) => item.stationName))]
     const arrivals = new Map<string, ArrivalEstimate[]>()
     await Promise.all(stations.map(async (station) => {
@@ -191,4 +192,14 @@ function shiftTrip(trip: TransitTrip, departureTime: number): TransitTrip {
   const firstDeparture = trip.stops[0]?.departureTime ?? departureTime
   const offset = departureTime - firstDeparture
   return { ...trip, stops: trip.stops.map((stop) => ({ ...stop, arrivalTime: stop.arrivalTime + offset, departureTime: stop.departureTime + offset })) }
+}
+
+export function isSeoulTransitServiceWindow(departureTime: number): boolean {
+  const minute = ((departureTime % (24 * 60)) + 24 * 60) % (24 * 60)
+  return minute >= 4 * 60 + 30 || minute < 90
+}
+
+export function retainNightService(network: TransitNetwork): TransitNetwork {
+  const routeIds = new Set(network.routes.filter((route) => route.mode === 'bus' && (/심야/i.test(route.name) || /^N\d/i.test(route.name))).map((route) => route.id))
+  return { ...network, routes: network.routes.filter((route) => routeIds.has(route.id)), trips: network.trips.filter((trip) => routeIds.has(trip.routeId)) }
 }
