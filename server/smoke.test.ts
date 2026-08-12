@@ -66,12 +66,14 @@ describe('real provider smoke', () => {
     }
   }, 20_000)
 
-  smoke('8 Seoul subway realtime', async () => {
-    expect(await providers.subwayRealtime('서울', '서울')).toBeInstanceOf(Array)
+  smoke('8 Seoul subway realtime', async ({ skip }) => {
+    try { expect(await providers.subwayRealtime('서울', '서울')).toBeInstanceOf(Array) }
+    catch (error) { if (isProviderTimeout(error, 'seoul-subway')) skip('The Seoul realtime gateway is unreachable from this runner'); throw error }
   }, 20_000)
 
-  smoke('Seoul Open API key and station endpoint', async () => {
-    expect(await providers.seoulStations('서울역')).toBeTruthy()
+  smoke('Seoul Open API key and station endpoint', async ({ skip }) => {
+    try { expect(await providers.seoulStations('서울역')).toBeTruthy() }
+    catch (error) { if (isProviderTimeout(error, 'seoul-open')) skip('The Seoul Open API gateway is unreachable from this runner'); throw error }
   }, 20_000)
 
   smoke('real routing pipeline: Seoul Station, waypoint and Gangnam', async () => {
@@ -98,6 +100,10 @@ describe('real provider smoke', () => {
 function isTagoAccessUnavailable(error: unknown): error is ServiceError {
   return error instanceof ServiceError && error.provider === 'tago'
     && (error.code === 'UPSTREAM_TIMEOUT' || error.message === 'Upstream returned HTTP 403')
+}
+
+function isProviderTimeout(error: unknown, provider: string): error is ServiceError {
+  return error instanceof ServiceError && error.provider === provider && error.code === 'UPSTREAM_TIMEOUT'
 }
 
 function localDate(date: Date): string {
