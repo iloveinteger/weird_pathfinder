@@ -38,4 +38,24 @@ describe('TransitMap provider boundary', () => {
     expect(extend).toHaveBeenCalled()
     expect(setBounds).toHaveBeenCalledOnce()
   })
+
+  it('preserves the map viewport across unrelated UI rerenders', async () => {
+    const createMap = vi.fn()
+    const setBounds = vi.fn()
+    class LatLng { constructor(readonly latitude: number, readonly longitude: number) {} }
+    class LatLngBounds { extend() {} }
+    class Map { constructor() { createMap() } setBounds = setBounds }
+    class Marker { setMap() {} }
+    class Polyline { setMap() {} }
+    window.kakao = { maps: { load: (callback) => callback(), LatLng, LatLngBounds, Map, Marker, Polyline } }
+    const origin = { latitude: 37.55, longitude: 126.97 }
+    const destination = { latitude: 37.50, longitude: 127.03 }
+    const view = render(<TransitMap mode="real" kakaoJavaScriptKey="public-test-key" origin={origin} destination={destination} active={false} />)
+    await waitFor(() => expect(setBounds).toHaveBeenCalledOnce())
+
+    view.rerender(<TransitMap mode="real" kakaoJavaScriptKey="public-test-key" origin={{ ...origin }} destination={{ ...destination }} active />)
+
+    expect(createMap).toHaveBeenCalledOnce()
+    expect(setBounds).toHaveBeenCalledOnce()
+  })
 })

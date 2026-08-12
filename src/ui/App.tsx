@@ -314,5 +314,6 @@ function providerFailureMessage(error: unknown): string {
     UPSTREAM_UNAVAILABLE: '외부 API가 현재 응답하지 않습니다',
     MALFORMED_UPSTREAM: '외부 API 응답 형식이 올바르지 않습니다',
   }
-  return messages[error.name] ?? error.message
+  const code = (error as Error & { code?: string }).code ?? error.name
+  return messages[code] ?? error.message
 }

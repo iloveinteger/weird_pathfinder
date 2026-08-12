@@ -1,6 +1,6 @@
 import type { Coordinate, PlaceSearchResult, RouteId, StopId, TransitPoint, TransitRoute, TransitTrip } from '../../domain/models'
 import type { TransitNetwork } from '../../routing/network'
-import { ProviderUnavailableError } from '../availability'
+import { ProviderUnavailableError, type ProviderId } from '../availability'
 import type {
   ArrivalEstimate,
   BusProvider,
@@ -18,13 +18,24 @@ interface BackendErrorBody { error?: { code?: string; message?: string; provider
 export class BackendApiClient {
   constructor(private readonly baseUrl: string, private readonly fetcher: typeof fetch = fetch) {}
 
-  async get<T>(path: string, params: Record<string, string | number | undefined> = {}): Promise<T> {
-    if (!this.baseUrl) throw new ProviderUnavailableError('transit-network')
+  async get<T>(path: string, params: Record<string, string | number | undefined> = {}, providerId: ProviderId = 'transit-network'): Promise<T> {
+    if (!this.baseUrl) throw new ProviderUnavailableError(providerId)
     const url = new URL(`${this.baseUrl.replace(/\/$/, '')}${path}`, window.location.origin)
     Object.entries(params).forEach(([name, value]) => { if (value !== undefined) url.searchParams.set(name, String(value)) })
-    let response: Response
-    try { response = await this.fetcher(url.toString(), { headers: { accept: 'application/json' } }) }
-    catch { throw new ProviderUnavailableError('transit-network') }
+    let response: Response | undefined
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const controller = new AbortController()
+      const timeout = window.setTimeout(() => controller.abort(), 12_000)
+      try {
+        response = await this.fetcher(url.toString(), { headers: { accept: 'application/json' }, signal: controller.signal })
+        if (response.status < 500 || attempt === 1) break
+      } catch {
+        if (attempt === 1) throw new ProviderUnavailableError(providerId)
+      } finally {
+        window.clearTimeout(timeout)
+      }
+    }
+    if (!response) throw new ProviderUnavailableError(providerId)
     const body = await response.json().catch(() => undefined) as T | BackendErrorBody | undefined
     if (!response.ok || body === undefined) {
       const backendError = body as BackendErrorBody | undefined
@@ -38,13 +49,13 @@ export class BackendApiClient {
 
 export class KakaoLocalPlaceProvider implements PlaceProvider {
   constructor(private readonly client: BackendApiClient) {}
-  search(query: string): Promise<PlaceSearchResult[]> { return query ? this.client.get('/places/search', { q: query }) : Promise.resolve([]) }
-  reverseGeocode(coordinate: Coordinate): Promise<PlaceSearchResult | null> { return this.client.get('/places/reverse', { lat: coordinate.latitude, lng: coordinate.longitude }) }
+  search(query: string): Promise<PlaceSearchResult[]> { return query ? this.client.get('/places/search', { q: query }, 'kakao-local') : Promise.resolve([]) }
+  reverseGeocode(coordinate: Coordinate): Promise<PlaceSearchResult | null> { return this.client.get('/places/reverse', { lat: coordinate.latitude, lng: coordinate.longitude }, 'kakao-local') }
 }
 
 export class RealWalkingProvider implements WalkingProvider {
   constructor(private readonly client: BackendApiClient) {}
-  getRoute(from: Coordinate, to: Coordinate): Promise<WalkingRoute> { return this.client.get('/walking', { fromLat: from.latitude, fromLng: from.longitude, toLat: to.latitude, toLng: to.longitude }) }
+  getRoute(from: Coordinate, to: Coordinate): Promise<WalkingRoute> { return this.client.get('/walking', { fromLat: from.latitude, fromLng: from.longitude, toLat: to.latitude, toLng: to.longitude }, 'walking-route') }
 }
 
 export class PublicDataBusProvider implements BusProvider {

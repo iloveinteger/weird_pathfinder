@@ -18,7 +18,7 @@ button { cursor: pointer; }
 .kicker { color: #e04f2f; }
 h1 { margin: 7px 0 0; font-size: 27px; letter-spacing: -.05em; }
 .now-button { border: 1px solid #d9dfd9; border-radius: 10px; background: #fff; padding: 9px 12px; font-size: 12px; font-weight: 700; }
-.place-stack { position: relative; border: 1px solid #d9dfd9; border-radius: 15px; overflow: hidden; }
+.place-stack { position: relative; border: 1px solid #d9dfd9; border-radius: 15px; overflow: visible; }
 .place-field { position: relative; display: grid; grid-template-columns: 20px 48px 1fr auto; align-items: center; min-height: 60px; padding: 0 12px; border-bottom: 1px solid #edf0ec; }
 .place-stack > .place-field:last-child { border: 0; }
 .place-stack small { color: #758078; font-size: 11px; }
