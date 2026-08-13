@@ -1,5 +1,6 @@
 import type { Journey, PlaceSearchResult } from '../domain/models'
 import type { TransitProviderSet } from '../providers/interfaces'
+import type { TransitNetwork, WalkingLink } from '../routing/network'
 import { TimeDependentRouter } from '../routing/router'
 import { CoreTransitPlanner, type PlannedRoute, type PlannerSearchRequest, type TransitPlanner } from './transitPlanner'
 
@@ -21,21 +22,66 @@ export class RealTransitPlanner implements TransitPlanner {
 
   async findRoutes(request: PlannerSearchRequest): Promise<PlannedRoute[]> {
     const ids = [request.originId, ...request.waypoints.map((waypoint) => waypoint.placeId), request.destinationId]
-    const legs: PlannedRoute[] = []
-    let departureTime = request.departureTime
+    let candidates: RouteSequence[] = [{ routes: [], departureTime: request.departureTime }]
     for (let index = 0; index < ids.length - 1; index++) {
       const origin = this.places.get(ids[index]); const destination = this.places.get(ids[index + 1])
       if (!origin || !destination) throw new Error('Select origin and destination from place search results')
-      const network = await this.providers.network.getNetwork({ origin: origin.coordinate, destination: destination.coordinate, departureTime, serviceDate: localServiceDate() })
-      network.points.forEach((point) => this.pointNames.set(point.id, point.name))
-      network.routes.forEach((route) => this.pointNames.set(route.id, route.name))
-      const planner = new CoreTransitPlanner(this.providers.place, new TimeDependentRouter(network), network.points)
-      const found = await planner.findRoutes({ ...request, originId: 'origin', destinationId: 'destination', departureTime, waypoints: [] })
-      if (!found.length) return []
-      legs.push(found[0])
-      departureTime = found[0].bestPossibleArrival + (request.waypoints[index]?.dwellMinutes ?? 0)
+      const expanded = (await Promise.all(candidates.map(async (candidate) => {
+        const snapshot = await this.providers.network.getNetwork({ origin: origin.coordinate, destination: destination.coordinate, departureTime: candidate.departureTime, serviceDate: localServiceDate() })
+        const network = await this.withWalkingRoutes(snapshot)
+        network.points.forEach((point) => this.pointNames.set(point.id, point.name))
+        network.routes.forEach((route) => this.pointNames.set(route.id, route.name))
+        const planner = new CoreTransitPlanner(this.providers.place, new TimeDependentRouter(network), network.points)
+        const found = await planner.findRoutes({ ...request, originId: 'origin', destinationId: 'destination', departureTime: candidate.departureTime, waypoints: [] })
+        return found.slice(0, MAX_RECOMMENDATIONS).map((route) => ({
+          routes: [...candidate.routes, route],
+          departureTime: route.bestPossibleArrival + (request.waypoints[index]?.dwellMinutes ?? 0),
+        }))
+      }))).flat()
+      if (!expanded.length) return []
+      candidates = expanded.sort(sequenceComparator(request.mode)).slice(0, MAX_RECOMMENDATIONS)
     }
-    return legs.length === 1 ? legs : [combineRoutes(legs, request.departureTime)]
+    return candidates.map((candidate) => candidate.routes.length === 1 ? candidate.routes[0] : combineRoutes(candidate.routes, request.departureTime))
+  }
+
+  private async withWalkingRoutes(network: TransitNetwork): Promise<TransitNetwork> {
+    const points = new Map(network.points.map((point) => [point.id, point.coordinate]))
+    const boardingStopIds = new Set(network.trips.flatMap((trip) => trip.stops.slice(0, -1).map((stop) => stop.stopId)))
+    const walkingLinks = await Promise.all(network.walkingLinks.map(async (link): Promise<WalkingLink> => {
+      const from = points.get(link.fromStopId); const to = points.get(link.toStopId)
+      if (!from || !to) return link
+      try {
+        const route = await this.providers.walking.getRoute(from, to)
+        // Access/transfer duration is already baked into the upstream candidate's
+        // synthetic departure times. Keep it stable so richer geometry cannot
+        // make the advertised vehicle impossible to board.
+        const durationMinutes = boardingStopIds.has(link.toStopId) ? link.durationMinutes : route.durationMinutes
+        return { ...link, distanceMeters: route.distanceMeters, durationMinutes, path: route.path }
+      } catch {
+        return link
+      }
+    }))
+    return { ...network, walkingLinks }
+  }
+}
+
+const MAX_RECOMMENDATIONS = 3
+interface RouteSequence { routes: PlannedRoute[]; departureTime: number }
+
+function sequenceComparator(mode: PlannerSearchRequest['mode']): (left: RouteSequence, right: RouteSequence) => number {
+  const metrics = (sequence: RouteSequence) => {
+    const journeys = sequence.routes.map((route) => route.variants[0].journey)
+    return {
+      arrival: sequence.routes.at(-1)?.bestPossibleArrival ?? sequence.departureTime,
+      transfers: journeys.reduce((sum, journey) => sum + journey.transferCount, 0),
+      walking: journeys.reduce((sum, journey) => sum + journey.walkingDistanceMeters, 0),
+    }
+  }
+  return (left, right) => {
+    const a = metrics(left); const b = metrics(right)
+    if (mode === 'transfers') return a.transfers - b.transfers || a.arrival - b.arrival || a.walking - b.walking
+    if (mode === 'walking') return a.walking - b.walking || a.arrival - b.arrival || a.transfers - b.transfers
+    return a.arrival - b.arrival || a.transfers - b.transfers || a.walking - b.walking
   }
 }
 

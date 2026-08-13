@@ -11,6 +11,18 @@ describe('provider response normalization', () => {
     expect(normalizeKakaoWalking({ status: 'OK', route: { properties: { totalDistance: 120, totalTime: 90 }, legs: [{ steps: [{ path: { points: [[126.97, 37.55], [126.98, 37.56]] } }] }] } })).toEqual({ distanceMeters: 120, durationMinutes: 2, path: [{ latitude: 37.55, longitude: 126.97 }, { latitude: 37.56, longitude: 126.98 }] })
   })
 
+  it('anchors walking geometry to the requested endpoints', () => {
+    const from = { latitude: 37.55, longitude: 126.97 }
+    const to = { latitude: 37.56, longitude: 126.98 }
+    const route = normalizeKakaoWalking({ status: 'OK', route: { properties: { totalDistance: 120, totalTime: 90 }, legs: [{ steps: [{ path: { points: [[126.971, 37.551], [126.979, 37.559]] } }] }] } }, from, to)
+    expect(route.path).toEqual([
+      from,
+      { latitude: 37.551, longitude: 126.971 },
+      { latitude: 37.559, longitude: 126.979 },
+      to,
+    ])
+  })
+
   it('normalizes TAGO stop and arrival payloads including singleton items', () => {
     expect(normalizeTagoStops(tago({ nodeid: 'S1', nodenm: '정류장', gpslati: '37.5', gpslong: '127.0' }))[0]).toMatchObject({ id: 'S1', kind: 'bus-stop' })
     const observedAt = new Date('2026-08-13T00:00:00Z')
@@ -45,6 +57,42 @@ describe('provider response normalization', () => {
     expect(extractKakaoTransitBoardings(raw)).toEqual([{ routeId: 'kakao-route:0:1', routeName: '701', mode: 'bus', stationName: '' }])
     const journeys = new TimeDependentRouter(network).findJourneys({ originId: 'origin', destinationId: 'destination', departureTime: 540, mode: 'normal' })
     expect(journeys[0].segments.some((segment) => segment.type === 'transit' && segment.mode === 'bus')).toBe(true)
+  })
+
+  it('adds access and egress walking around a transit-only upstream route', () => {
+    const origin = { latitude: 37.55, longitude: 126.97 }
+    const destination = { latitude: 37.57, longitude: 127.01 }
+    const raw = { status: 'OK', routes: [{ steps: [{
+      properties: { time: 600, distance: 4_000, vehicles: [{ type: 'BUS', name: '701' }] },
+      path: { points: [[126.975, 37.552], [127.005, 37.568]] },
+    }] }] }
+
+    const network = normalizeKakaoTransitNetwork(raw, origin, destination, 540, '2026-08-13')
+    const journey = new TimeDependentRouter(network).findJourneys({ originId: 'origin', destinationId: 'destination', departureTime: 540, mode: 'normal' })[0]
+
+    expect(network.walkingLinks.map((link) => link.purpose)).toEqual(['access', 'egress'])
+    expect(network.walkingLinks.every((link) => link.distanceMeters > 0 && link.durationMinutes > 0 && link.path!.length >= 2)).toBe(true)
+    expect(journey.segments.map((segment) => segment.type === 'walk' ? segment.purpose : segment.type)).toEqual(['access', 'transit', 'egress'])
+    expect(journey.walkingDistanceMeters).toBeGreaterThan(0)
+  })
+
+  it('keeps adjacent transit and waypoint-leg geometry connected', () => {
+    const step = (points: number[][], vehicles?: unknown[]) => ({ properties: { time: 60, distance: 100, vehicles }, path: { points } })
+    const origin = { latitude: 37.55, longitude: 126.97 }
+    const destination = { latitude: 37.57, longitude: 127.01 }
+    const raw = { status: 'OK', routes: [{ steps: [
+      step([[126.971, 37.551]]),
+      step([[127.0, 37.56], [127.005, 37.565]], [{ type: 'BUS', name: '701' }]),
+      step([[127.009, 37.569]]),
+    ] }] }
+    const network = normalizeKakaoTransitNetwork(raw, origin, destination, 540, '2026-08-13')
+    const paths = [...network.walkingLinks.map((link) => link.path!), ...network.routes.map((route) => route.path!)]
+
+    expect(paths.every((path) => path.length >= 2)).toBe(true)
+    expect(network.walkingLinks[0].path?.[0]).toEqual(origin)
+    expect(network.walkingLinks.at(-1)?.path?.at(-1)).toEqual(destination)
+    expect(network.walkingLinks[0].path?.at(-1)).toEqual(network.routes[0].path?.[0])
+    expect(network.routes[0].path?.at(-1)).toEqual(network.walkingLinks.at(-1)?.path?.[0])
   })
 
   it('rejects malformed and quota responses with stable error codes', () => {

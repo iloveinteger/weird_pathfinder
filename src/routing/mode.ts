@@ -12,6 +12,8 @@ export interface RoutingPolicy {
   transferProfiles: TransferProfile[]
   maxTransfers: number
   maxWalkingMeters: number
+  maxAccessEgressMeters: number
+  maxTransferWalkingMeters: number
   maxBoardingOptions: number
   allowOppositeDirection: boolean
   allowStationReentry: boolean
@@ -23,8 +25,10 @@ export const ROUTING_POLICIES: Record<RoutingMode, RoutingPolicy> = {
     mode: 'normal',
     transferProfiles: [{ pace: 'standard', durationMultiplier: 1 }],
     maxTransfers: 3,
-    maxWalkingMeters: 1_500,
-    maxBoardingOptions: 1,
+    maxWalkingMeters: 5_000,
+    maxAccessEgressMeters: 2_000,
+    maxTransferWalkingMeters: 2_000,
+    maxBoardingOptions: 3,
     allowOppositeDirection: false,
     allowStationReentry: false,
     pruneByHeuristics: true,
@@ -38,6 +42,8 @@ export const ROUTING_POLICIES: Record<RoutingMode, RoutingPolicy> = {
     ],
     maxTransfers: 8,
     maxWalkingMeters: 5_000,
+    maxAccessEgressMeters: 5_000,
+    maxTransferWalkingMeters: 5_000,
     maxBoardingOptions: 3,
     allowOppositeDirection: true,
     allowStationReentry: true,

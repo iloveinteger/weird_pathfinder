@@ -5,6 +5,7 @@ import { ROUTING_POLICIES } from './mode'
 import { TimeDependentRouter } from './router'
 import { dominates, mergeEquivalentStates, type RoutingState } from './state'
 import { branchAcrossWalkingLink } from './transferBranching'
+import type { TransitNetwork } from './network'
 
 const initialState: RoutingState = {
   id: 'arrived-by-bus',
@@ -49,6 +50,31 @@ describe('time-dependent router', () => {
   it('sorts viable journeys by arrival time', () => {
     const journeys = router.findJourneys({ originId: 'seoul-platform', destinationId: 'jamsil', departureTime: parseClock('09:12'), mode: 'hard' })
     expect(journeys.map((journey) => journey.arrivalTime)).toEqual([...journeys.map((journey) => journey.arrivalTime)].sort((a, b) => a - b))
+  })
+
+  it('explores access, transfer and egress walking in one route', () => {
+    const point = (id: string, longitude: number) => ({ id, kind: 'bus-stop' as const, name: id, coordinate: { latitude: 37.5, longitude } })
+    const network: TransitNetwork = {
+      points: ['O', 'A', 'B', 'C', 'D', 'Z'].map((id, index) => point(id, 127 + index * .001)),
+      routes: [
+        { id: 'r1', name: '101', mode: 'bus', color: '#00f', stopIds: ['A', 'B'] },
+        { id: 'r2', name: '202', mode: 'bus', color: '#00f', stopIds: ['C', 'D'] },
+      ],
+      trips: [
+        { id: 't1', routeId: 'r1', headsign: 'B', serviceDate: '2026-08-13', stops: [{ stopId: 'A', arrivalTime: 505, departureTime: 505, sequence: 0 }, { stopId: 'B', arrivalTime: 515, departureTime: 515, sequence: 1 }] },
+        { id: 't2', routeId: 'r2', headsign: 'D', serviceDate: '2026-08-13', stops: [{ stopId: 'C', arrivalTime: 540, departureTime: 540, sequence: 0 }, { stopId: 'D', arrivalTime: 550, departureTime: 550, sequence: 1 }] },
+      ],
+      walkingLinks: [
+        { fromStopId: 'O', toStopId: 'A', distanceMeters: 2_000, durationMinutes: 20, purpose: 'access' },
+        { fromStopId: 'B', toStopId: 'C', distanceMeters: 2_000, durationMinutes: 20, purpose: 'transfer' },
+        { fromStopId: 'D', toStopId: 'Z', distanceMeters: 500, durationMinutes: 5, purpose: 'egress' },
+      ],
+    }
+
+    const journey = new TimeDependentRouter(network).findJourneys({ originId: 'O', destinationId: 'Z', departureTime: 480, mode: 'normal' })[0]
+
+    expect(journey.segments.filter((segment) => segment.type === 'walk').map((segment) => segment.purpose)).toEqual(['access', 'transfer', 'egress'])
+    expect(journey.segments.filter((segment) => segment.type === 'transit')).toHaveLength(2)
   })
 })
 

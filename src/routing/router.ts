@@ -1,4 +1,4 @@
-import type { Journey, TransitSegment, TransitTrip } from '../domain/models'
+import type { Coordinate, Journey, TransitSegment, TransitTrip } from '../domain/models'
 import type { RoutingMode } from './mode'
 import { ROUTING_POLICIES } from './mode'
 import type { TransitNetwork, WalkingLink } from './network'
@@ -26,10 +26,12 @@ export class TimeDependentRouter {
   private readonly boardingsFrom = new Map<string, BoardingOption[]>()
   private readonly routeModes = new Map<string, 'bus' | 'subway'>()
   private readonly routePaths = new Map<string, NonNullable<TransitSegment['path']>>()
+  private readonly pointCoordinates = new Map<string, Coordinate>()
   private readonly hardRouter: HardRouter
 
   constructor(private readonly network: TransitNetwork) {
     validateNetwork(network)
+    network.points.forEach((point) => this.pointCoordinates.set(point.id, point.coordinate))
     this.hardRouter = new HardRouter(network)
     for (const route of network.routes) {
       this.routeModes.set(route.id, route.mode)
@@ -104,6 +106,7 @@ export class TimeDependentRouter {
         const boardingStop = trip.stops[boardingIndex]
         for (let alightingIndex = boardingIndex + 1; alightingIndex < trip.stops.length; alightingIndex++) {
           const alightingStop = trip.stops[alightingIndex]
+          if (!policy.allowOppositeDirection && !this.movesTowardDestination(boardingStop.stopId, alightingStop.stopId, request.destinationId)) continue
           const segment: TransitSegment = {
             type: 'transit',
             mode: this.routeModes.get(trip.routeId)!,
@@ -161,6 +164,12 @@ export class TimeDependentRouter {
     this.walkingFrom.set(link.fromStopId, links)
   }
 
+  private movesTowardDestination(fromId: string, toId: string, destinationId: string): boolean {
+    const from = this.pointCoordinates.get(fromId); const to = this.pointCoordinates.get(toId); const destination = this.pointCoordinates.get(destinationId)
+    if (!from || !to || !destination) return true
+    return squaredDistance(to, destination) + 1e-12 < squaredDistance(from, destination)
+  }
+
   private enqueue(state: RoutingState, frontier: Map<string, RoutingState[]>, queue: RoutingState[]): void {
     const atStop = frontier.get(state.locationId) ?? []
     const merged = mergeEquivalentStates([...atStop, state])
@@ -189,4 +198,8 @@ export class TimeDependentRouter {
       mergedAlternativeIds: state.mergedAlternativeIds,
     }))
   }
+}
+
+function squaredDistance(left: Coordinate, right: Coordinate): number {
+  return (left.latitude - right.latitude) ** 2 + (left.longitude - right.longitude) ** 2
 }

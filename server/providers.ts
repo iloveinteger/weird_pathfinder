@@ -46,7 +46,7 @@ export class UpstreamProviders {
   walking(from: Coordinate, to: Coordinate) {
     return this.cached('walking', { from, to }, CACHE_TTL.walking, async () => normalizeKakaoWalking(await this.kakao('/v2/routing/walk', {
       start_x: String(from.longitude), start_y: String(from.latitude), end_x: String(to.longitude), end_y: String(to.latitude), route_mode: 'SHORTEST',
-    })))
+    }), from, to))
   }
 
   transitNetwork(origin: Coordinate, destination: Coordinate, departureTime: number, serviceDate: string) {

@@ -69,7 +69,7 @@ export class CoreTransitPlanner implements TransitPlanner {
       destinationId: request.destinationId,
       departureTime: request.departureTime,
       mode: 'normal',
-      maxJourneys: 6,
+      maxJourneys: 3,
     })
     journeys.sort(normalComparator(request.mode))
     return journeys.map((journey) => normalRoute({ journey, legArrivals: [] }, []))
@@ -81,7 +81,7 @@ export class CoreTransitPlanner implements TransitPlanner {
         originId: request.originId,
         destinationId: request.destinationId,
         departureTime: request.departureTime,
-        maxJourneys: 5,
+        maxJourneys: 3,
       }).candidates.map(hardRoute)
     }
 

@@ -33,12 +33,13 @@ export function normalizeKakaoReverse(raw: unknown, coordinate: Coordinate): Pla
   return address ? { id: `coordinate:${coordinate.latitude},${coordinate.longitude}`, name: address, address, coordinate } : null
 }
 
-export function normalizeKakaoWalking(raw: unknown): WalkingRoute {
+export function normalizeKakaoWalking(raw: unknown, from?: Coordinate, to?: Coordinate): WalkingRoute {
   const root = record(raw, 'kakao')
   if (root.status !== 'OK') throw new ServiceError('UPSTREAM_UNAVAILABLE', 502, `Walking route unavailable: ${text(root.status) || 'UNKNOWN'}`, 'kakao')
   const route = record(root.route, 'kakao'); const properties = record(route.properties, 'kakao')
   const distanceMeters = number(properties.totalDistance); const seconds = number(properties.totalTime)
-  const path = array(route.legs).flatMap((leg) => array(record(leg, 'kakao').steps)).flatMap((step) => array(record(record(step, 'kakao').path, 'kakao').points)).map(pointToCoordinate)
+  const providerPath = array(route.legs).flatMap((leg) => array(record(leg, 'kakao').steps)).flatMap((step) => array(record(record(step, 'kakao').path, 'kakao').points)).map(pointToCoordinate)
+  const path = anchorPath(providerPath, from, to)
   if (!Number.isFinite(distanceMeters) || !Number.isFinite(seconds) || path.length < 2) throw new ServiceError('MALFORMED_UPSTREAM', 502, 'Kakao walking response is invalid', 'kakao')
   return { distanceMeters, durationMinutes: Math.max(1, Math.ceil(seconds / 60)), path }
 }
@@ -166,23 +167,37 @@ export function normalizeKakaoTransitNetwork(raw: unknown, origin: Coordinate, d
   const routes: TransitRoute[] = []; const trips: TransitTrip[] = []; const walkingLinks: WalkingLink[] = []
   array(root.routes).forEach((candidate, candidateIndex) => {
     let clock = departureTime; let previous = 'origin'; const steps = array(record(candidate, 'kakao').steps)
+    const providerPaths = steps.map((stepValue) => array(record(record(stepValue, 'kakao').path, 'kakao').points).map(pointToCoordinate))
+    let previousCoordinate = origin
     steps.forEach((stepValue, stepIndex) => {
-      const step = record(stepValue, 'kakao'); const props = record(step.properties, 'kakao'); const path = array(record(step.path, 'kakao').points).map(pointToCoordinate)
-      if (path.length < 2) return
+      const step = record(stepValue, 'kakao'); const props = record(step.properties, 'kakao')
       const duration = Math.max(1, Math.ceil(number(props.time) / 60)); const distance = Math.max(0, number(props.distance)); const vehicles = array(props.vehicles).map((v) => record(v, 'kakao'))
-      const fromId = previous; const toId = stepIndex === steps.length - 1 ? 'destination' : `kakao:${candidateIndex}:${stepIndex}:to`
+      const transitMode = kakaoTransitMode(props, vehicles); const isLast = stepIndex === steps.length - 1
+      let fromId = previous
+      if (transitMode && previous === 'origin' && stepIndex === 0) {
+        const boardingCoordinate = providerPaths[stepIndex][0] ?? origin
+        fromId = `kakao:${candidateIndex}:${stepIndex}:from`
+        points.push(placePoint(fromId, '첫 승차 지점', boardingCoordinate))
+        const access = straightWalkingLink('origin', fromId, origin, boardingCoordinate, 'access')
+        walkingLinks.push(access); clock += access.durationMinutes; previousCoordinate = boardingCoordinate
+      }
+      const nextCoordinate = transitMode
+        ? providerPaths[stepIndex].at(-1)
+        : isLast ? destination : firstCoordinate(providerPaths, stepIndex + 1)
+      const path = anchorPath(providerPaths[stepIndex], previousCoordinate, nextCoordinate)
+      if (path.length < 2) return
+      const toId = !transitMode && isLast ? 'destination' : `kakao:${candidateIndex}:${stepIndex}:to`
       const stops = array(props.stops); const lastStop = stops[stops.length - 1]; const lastPathPoint = path[path.length - 1]
       if (toId !== 'destination' && !points.some((point) => point.id === toId)) points.push(placePoint(toId, text(lastStop && record(lastStop, 'kakao').name) || `환승 ${stepIndex + 1}`, lastPathPoint))
-      const transitMode = kakaoTransitMode(props, vehicles)
       if (!transitMode) walkingLinks.push({ fromStopId: fromId, toStopId: toId, distanceMeters: distance, durationMinutes: duration, purpose: stepIndex === 0 ? 'access' : stepIndex === steps.length - 1 ? 'egress' : 'transfer', path })
       else {
         const routeId = `kakao-route:${candidateIndex}:${stepIndex}`; const routeName = text(vehicles[0]?.name) || text(props.guidance) || routeId
         routes.push({ id: routeId, name: routeName, mode: transitMode, color: transitMode === 'bus' ? '#3471ce' : '#21a368', stopIds: [fromId, toId], path })
         trips.push({ id: `kakao-trip:${candidateIndex}:${stepIndex}`, routeId, headsign: routeName, serviceDate, stops: [{ stopId: fromId, arrivalTime: clock, departureTime: clock, sequence: 0 }, { stopId: toId, arrivalTime: clock + duration, departureTime: clock + duration, sequence: 1 }] })
       }
-      clock += duration; previous = toId
+      clock += duration; previous = toId; previousCoordinate = path[path.length - 1]
     })
-    if (previous !== 'destination') walkingLinks.push({ fromStopId: previous, toStopId: 'destination', distanceMeters: 0, durationMinutes: 1, purpose: 'egress' })
+    if (previous !== 'destination') walkingLinks.push(straightWalkingLink(previous, 'destination', previousCoordinate, destination, 'egress'))
   })
   return { points: uniqueById(points), routes, trips, walkingLinks }
 }
@@ -194,3 +209,35 @@ function kakaoTransitMode(props: Record<string, unknown>, vehicles: Array<Record
 
 const placePoint = (id: string, name: string, coordinate: Coordinate): TransitPoint => ({ id, kind: 'place', name, coordinate })
 const uniqueById = <T extends { id: string }>(items: T[]): T[] => [...new Map(items.map((item) => [item.id, item])).values()]
+
+function firstCoordinate(paths: Coordinate[][], startIndex: number): Coordinate | undefined {
+  for (let index = startIndex; index < paths.length; index++) {
+    if (paths[index][0]) return paths[index][0]
+  }
+  return undefined
+}
+
+function anchorPath(path: Coordinate[], from?: Coordinate, to?: Coordinate): Coordinate[] {
+  const anchored = [...path]
+  if (from && !sameCoordinate(anchored[0], from)) anchored.unshift(from)
+  if (to && !sameCoordinate(anchored.at(-1), to)) anchored.push(to)
+  return anchored
+}
+
+function sameCoordinate(left?: Coordinate, right?: Coordinate): boolean {
+  return Boolean(left && right && left.latitude === right.latitude && left.longitude === right.longitude)
+}
+
+function straightWalkingLink(fromStopId: string, toStopId: string, from: Coordinate, to: Coordinate, purpose: WalkingLink['purpose']): WalkingLink {
+  const latitudeMeters = (to.latitude - from.latitude) * 111_000
+  const longitudeMeters = (to.longitude - from.longitude) * 88_000
+  const distanceMeters = Math.round(Math.hypot(latitudeMeters, longitudeMeters))
+  return {
+    fromStopId,
+    toStopId,
+    distanceMeters,
+    durationMinutes: Math.max(1, Math.ceil(distanceMeters / 75)),
+    purpose,
+    path: anchorPath([], from, to),
+  }
+}

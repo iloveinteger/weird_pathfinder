@@ -9,6 +9,8 @@ export function branchAcrossWalkingLink(
   policy: RoutingPolicy,
 ): RoutingState[] {
   if (state.walkingDistanceMeters + link.distanceMeters > policy.maxWalkingMeters) return []
+  if (link.purpose === 'transfer' && link.distanceMeters > policy.maxTransferWalkingMeters) return []
+  if (link.purpose !== 'transfer' && link.distanceMeters > policy.maxAccessEgressMeters) return []
 
   // Hard mode only branches transfer movement. Access/egress walking remains
   // at the provider's normal duration instead of receiving a global speed-up.

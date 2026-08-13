@@ -129,6 +129,13 @@ describe('App planner', () => {
     expect(within(branches).getByText(/09:13 탑승/)).toBeInTheDocument()
   })
 
+  it('shows the selected Hard route transfer difficulty', async () => {
+    await searchHardRoute()
+    const guide = screen.getByLabelText('Hard 환승 난이도')
+    expect(within(guide).getByText('매우 촉박')).toBeInTheDocument()
+    expect(within(guide).getByText(/평소보다 1분 빠르게 이동 필요/)).toBeInTheDocument()
+  })
+
   it('updates the final ETA when a timing branch is selected', async () => {
     await searchHardRoute()
     const detail = screen.getByLabelText('경로 상세')

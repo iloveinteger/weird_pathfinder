@@ -226,11 +226,29 @@ function RouteDetail({ planner, route, variant, onVariantChange, onStart }: { pl
       const pace = variantPace(item)
       return <button key={item.id} className={item.id === variant.id ? 'selected' : ''} onClick={() => onVariantChange(item)}><span className={`pace ${pace}`}>{paceLabel(pace)}</span><b>{choice ? `${choice.requiredMinutes}분 이내` : transferWalkDuration(item)} → {choice ? formatClock(choice.vehicleDepartureTime) : nextTransitClock(item)} 탑승</b><small>최종 {durationLabel(item.journey.departureTime, item.arrivalTime)}</small></button>
     })}</div>}
+    {route.hard && <HardTransferDifficulty variant={variant} planner={planner} />}
     <ol className="segment-list">{variant.journey.segments.map((segment, index) => <li key={`${segment.type}-${index}`} className={segment.type === 'walk' ? 'walk' : segment.mode}>
       <span className="segment-icon">{segment.type === 'walk' ? (segment.purpose === 'transfer' ? '↗' : '●') : segment.mode === 'bus' ? 'B' : 'M'}</span>
       <div><small>{formatClock(segment.departureTime)} → {formatClock(segment.arrivalTime)}</small><b>{segmentTitle(segment, planner)}</b><span>{segment.type === 'walk' ? `${segment.durationMinutes}분 · ${distanceLabel(segment.distanceMeters)}${segment.purpose === 'transfer' ? ` · ${paceLabel(segment.pace)} 환승` : ''}` : `${planner.pointName(segment.toStopId)} 도착`}</span></div>
     </li>)}</ol>
     <button className={`primary-action ${route.hard ? 'hard' : ''}`} onClick={onStart}>이 경로로 출발 <span>→</span></button>
+  </section>
+}
+
+function HardTransferDifficulty({ variant, planner }: { variant: TimingVariant; planner: TransitPlanner }) {
+  return <section className="hard-transfer-guide" aria-label="Hard 환승 난이도">
+    <div className="branch-heading"><b>환승 난이도</b><small>환승 통로 이동 속도와 다음 차량 대기시간 기준</small></div>
+    {variant.transferChoices.length === 0
+      ? <p>환승 없는 경로입니다.</p>
+      : variant.transferChoices.map((choice, index) => {
+        const waitMinutes = Math.max(0, choice.vehicleDepartureTime - choice.readyTime)
+        const savedMinutes = Math.max(0, choice.standardMinutes - choice.requiredMinutes)
+        const difficulty = choice.pace === 'fast' || waitMinutes <= 1 ? '매우 촉박' : waitMinutes <= 3 ? '촉박' : waitMinutes <= 6 ? '보통' : '여유'
+        return <div className={`transfer-difficulty ${choice.pace}`} key={choice.id}>
+          <span><b>{index + 1}. {planner.pointName(choice.atStopId)}</b><em>{difficulty}</em></span>
+          <small>{choice.requiredMinutes}분 안에 환승 이동 · 이동 후 {waitMinutes}분 대기 · {formatClock(choice.vehicleDepartureTime)} 탑승{savedMinutes ? ` · 평소보다 ${savedMinutes}분 빠르게 이동 필요` : ''}</small>
+        </div>
+      })}
   </section>
 }
 
