@@ -28,12 +28,16 @@ export class RealTransitPlanner implements TransitPlanner {
       if (!origin || !destination) throw new Error('Select origin and destination from place search results')
       const expanded = (await Promise.all(candidates.map(async (candidate) => {
         const snapshot = await this.providers.network.getNetwork({ origin: origin.coordinate, destination: destination.coordinate, departureTime: candidate.departureTime, serviceDate: localServiceDate() })
-        const network = await this.withWalkingRoutes(snapshot)
-        network.points.forEach((point) => this.pointNames.set(point.id, point.name))
-        network.routes.forEach((route) => this.pointNames.set(route.id, route.name))
-        const planner = new CoreTransitPlanner(this.providers.place, new TimeDependentRouter(network), network.points)
-        const found = await planner.findRoutes({ ...request, originId: 'origin', destinationId: 'destination', departureTime: candidate.departureTime, waypoints: [] })
-        return found.slice(0, MAX_RECOMMENDATIONS).map((route) => ({
+        snapshot.points.forEach((point) => this.pointNames.set(point.id, point.name))
+        snapshot.routes.forEach((route) => this.pointNames.set(route.id, route.name))
+        const legRequest = { ...request, originId: 'origin', destinationId: 'destination', departureTime: candidate.departureTime, waypoints: [] }
+        const preliminary = await this.planner(snapshot).findRoutes(legRequest)
+        if (!preliminary.length) return []
+        const selectedLinks = walkingLinkKeys(preliminary.slice(0, MAX_RECOMMENDATIONS))
+        const network = await this.withWalkingRoutes(snapshot, selectedLinks)
+        const found = await this.planner(network).findRoutes(legRequest)
+        const recommended = found.length ? found : preliminary
+        return recommended.slice(0, MAX_RECOMMENDATIONS).map((route) => ({
           routes: [...candidate.routes, route],
           departureTime: route.bestPossibleArrival + (request.waypoints[index]?.dwellMinutes ?? 0),
         }))
@@ -44,10 +48,15 @@ export class RealTransitPlanner implements TransitPlanner {
     return candidates.map((candidate) => candidate.routes.length === 1 ? candidate.routes[0] : combineRoutes(candidate.routes, request.departureTime))
   }
 
-  private async withWalkingRoutes(network: TransitNetwork): Promise<TransitNetwork> {
+  private planner(network: TransitNetwork): CoreTransitPlanner {
+    return new CoreTransitPlanner(this.providers.place, new TimeDependentRouter(network), network.points)
+  }
+
+  private async withWalkingRoutes(network: TransitNetwork, selectedLinks: ReadonlySet<string>): Promise<TransitNetwork> {
     const points = new Map(network.points.map((point) => [point.id, point.coordinate]))
     const boardingStopIds = new Set(network.trips.flatMap((trip) => trip.stops.slice(0, -1).map((stop) => stop.stopId)))
     const walkingLinks = await Promise.all(network.walkingLinks.map(async (link): Promise<WalkingLink> => {
+      if (!selectedLinks.has(walkingLinkKey(link.fromStopId, link.toStopId))) return link
       const from = points.get(link.fromStopId); const to = points.get(link.toStopId)
       if (!from || !to) return link
       try {
@@ -67,6 +76,16 @@ export class RealTransitPlanner implements TransitPlanner {
 
 const MAX_RECOMMENDATIONS = 3
 interface RouteSequence { routes: PlannedRoute[]; departureTime: number }
+
+function walkingLinkKeys(routes: PlannedRoute[]): Set<string> {
+  return new Set(routes.flatMap((route) => route.variants.flatMap((variant) => variant.journey.segments
+    .filter((segment) => segment.type === 'walk')
+    .map((segment) => walkingLinkKey(segment.fromStopId, segment.toStopId)))))
+}
+
+function walkingLinkKey(fromStopId: string, toStopId: string): string {
+  return `${fromStopId}>${toStopId}`
+}
 
 function sequenceComparator(mode: PlannerSearchRequest['mode']): (left: RouteSequence, right: RouteSequence) => number {
   const metrics = (sequence: RouteSequence) => {

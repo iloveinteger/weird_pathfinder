@@ -182,7 +182,7 @@ export function normalizeKakaoTransitNetwork(raw: unknown, origin: Coordinate, d
         walkingLinks.push(access); clock += access.durationMinutes; previousCoordinate = boardingCoordinate
       }
       const nextCoordinate = transitMode
-        ? providerPaths[stepIndex].at(-1)
+        ? providerPaths[stepIndex][providerPaths[stepIndex].length - 1]
         : isLast ? destination : firstCoordinate(providerPaths, stepIndex + 1)
       const path = anchorPath(providerPaths[stepIndex], previousCoordinate, nextCoordinate)
       if (path.length < 2) return
@@ -220,7 +220,7 @@ function firstCoordinate(paths: Coordinate[][], startIndex: number): Coordinate 
 function anchorPath(path: Coordinate[], from?: Coordinate, to?: Coordinate): Coordinate[] {
   const anchored = [...path]
   if (from && !sameCoordinate(anchored[0], from)) anchored.unshift(from)
-  if (to && !sameCoordinate(anchored.at(-1), to)) anchored.push(to)
+  if (to && !sameCoordinate(anchored[anchored.length - 1], to)) anchored.push(to)
   return anchored
 }
 
@@ -231,7 +231,7 @@ function sameCoordinate(left?: Coordinate, right?: Coordinate): boolean {
 function straightWalkingLink(fromStopId: string, toStopId: string, from: Coordinate, to: Coordinate, purpose: WalkingLink['purpose']): WalkingLink {
   const latitudeMeters = (to.latitude - from.latitude) * 111_000
   const longitudeMeters = (to.longitude - from.longitude) * 88_000
-  const distanceMeters = Math.round(Math.hypot(latitudeMeters, longitudeMeters))
+  const distanceMeters = Math.max(1, Math.round(Math.hypot(latitudeMeters, longitudeMeters)))
   return {
     fromStopId,
     toStopId,

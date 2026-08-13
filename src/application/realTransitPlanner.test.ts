@@ -16,10 +16,14 @@ describe('RealTransitPlanner walking geometry', () => {
       points: [
         { id: 'origin', kind: 'place', name: '출발', coordinate: origin },
         { id: 'destination', kind: 'place', name: '도착', coordinate: destination },
+        { id: 'unused', kind: 'bus-stop', name: '미사용 정류장', coordinate: { latitude: origin.latitude + .02, longitude: origin.longitude + .02 } },
       ],
       routes: [],
       trips: [],
-      walkingLinks: [{ fromStopId: 'origin', toStopId: 'destination', distanceMeters: 1, durationMinutes: 1, purpose: 'access', path: [origin, destination] }],
+      walkingLinks: [
+        { fromStopId: 'origin', toStopId: 'destination', distanceMeters: 1, durationMinutes: 1, purpose: 'access', path: [origin, destination] },
+        { fromStopId: 'origin', toStopId: 'unused', distanceMeters: 1_000, durationMinutes: 15, purpose: 'access', path: [origin, { latitude: origin.latitude + .02, longitude: origin.longitude + .02 }] },
+      ],
     }))
     const walking = vi.fn(async (from: PlaceSearchResult['coordinate'], to: PlaceSearchResult['coordinate']) => ({
       distanceMeters: 900,
@@ -45,6 +49,8 @@ describe('RealTransitPlanner walking geometry', () => {
     })
 
     expect(network).toHaveBeenCalledTimes(2)
+    // Only the walking link used by each selected leg is enriched; unrelated
+    // upstream candidates must not start extra requests that time out in-browser.
     expect(walking).toHaveBeenCalledTimes(2)
     expect(routes[0].variants[0].journey.segments).toHaveLength(2)
     expect(routes[0].variants[0].journey.segments.every((segment) => segment.path?.length === 3)).toBe(true)
